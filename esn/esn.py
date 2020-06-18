@@ -115,5 +115,3 @@ def apply_esn(params, xs, h0):
 
     f = partial(_step, params)
     return lax.scan(f, xs, h)
-
-
