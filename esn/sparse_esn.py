@@ -1,4 +1,5 @@
 import numpy as np
+import jax.numpy as jnp
 import scipy.stats as stats
 from scipy import sparse
 from functools import partial
@@ -68,7 +69,7 @@ def sparse_esncell(input_dim, hidden_dim,
              jax.device_put(bh))
     return model
 
-def apply_sparse_esn(params, xs, h0):
+def sparse_apply_esn(params, xs, h0):
     """
     Apply and ESN defined by params (as in created from `sparse_esncell`) to
     each input in xs with the initial state h0. Each new input uses the updated
@@ -92,22 +93,7 @@ def apply_sparse_esn(params, xs, h0):
     (h, hs) = lax.scan(f, h0, xs)
     return (h, hs)
 
-def generate_state_matrix(esn, inputs, Ntrans):
-    (Whh,Wih,bh) = esn
-    (hidden_dim, Ntrain) = (Whh.shape[0], inputs.shape[0])
-           
-    h0 = jnp.zeros(hidden_dim)
-
-    (_,H) = apply_sparse_esn(esn, inputs, h0)
-    H = jnp.vstack(H)
-
-    H0 = H[Ntrans:]
-    I0 = inputs[Ntrans:]
-    ones = jnp.ones((Ntrain-Ntrans,1))
-    return jnp.concatenate([ones,I0,H0],axis=1)
-
-
-def predict_sparse_esn(model, y0, h0, Npred):
+def sparse_predict_esn(model, y0, h0, Npred):
     """
     Given a trained model = (Wih,Whh,bh,Who), a start internal state h0, and input
     y0 predict in free-running mode for Npred steps into the future, with
@@ -135,34 +121,16 @@ def predict_sparse_esn(model, y0, h0, Npred):
     return ((y,h), (ys,hs))
 
 
-def lstsq_stable(H, labels):
-    U, s, Vh = jax.scipy.linalg.svd(H.T)
-    scale = s[0]
-    n = len(s[jnp.abs(s / scale) > 1e-5])  # Ensure condition number less than 100.000
-    
-    L = labels.T
+def sparse_generate_state_matrix(esn, inputs, Ntrans):
+    (Whh,Wih,bh) = esn
+    (hidden_dim, Ntrain) = (Whh.shape[0], inputs.shape[0])
+           
+    h0 = jnp.zeros(hidden_dim)
 
-    v = Vh[:n, :].T
-    uh = U[:, :n].T
+    (_,H) = sparse_apply_esn(esn, inputs, h0)
+    H = jnp.vstack(H)
 
-    wout = jnp.dot(jnp.dot(L, v) / s[:n], uh)
-    return wout
-
-
-def apply_esn(params, xs, h0):
-    def _step(params, x, h):
-        (Wih, Whh, bh) = params
-        h = jnp.tanh(Whh.dot(h) + Wih.dot(x) + bh)
-        return (h, h)
-
-    f = partial(_step, params)
-    return lax.scan(f, xs, h)
-
-
-def split_train_label_pred(sequence, train_length, pred_length):
-    train_end = train_length + 1
-    train_seq = sequence[:train_end]
-    inputs = train_seq[:-1]
-    labels = train_seq[1:]
-    pred_labels = sequence[train_end:train_end + pred_length]
-    return inputs, labels, pred_labels
+    H0 = H[Ntrans:]
+    I0 = inputs[Ntrans:]
+    ones = jnp.ones((Ntrain-Ntrans,1))
+    return jnp.concatenate([ones,I0,H0],axis=1)
