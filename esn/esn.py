@@ -107,6 +107,48 @@ def generate_state_matrix(esn, inputs, Ntrans):
     return jnp.concatenate([ones,I0,H0],axis=1)
 
 
+def predict_sparse_esn(model, y0, h0, Npred):
+    """
+    Given a trained model = (Wih,Whh,bh,Who), a start internal state h0, and input
+    y0 predict in free-running mode for Npred steps into the future, with
+    output feeding back y_n as next input:
+    
+      h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
+      y_{n+1} = Who h_{n+1}
+    """
+    
+    (Wih,Whh,bh,Who) = model
+    aug_len = y0.shape[0]+1  # augment hidden state h
+
+    def _step(params, input, xs):
+        (Wih,(Whh,shape),bh,Who) = params
+        (y,h_augmented) = input
+        aug, h = h_augmented[:aug_len], h_augmented[aug_len:]
+        h = jnp.tanh(sp_dot(Whh,h,shape[0]) + Wih.dot(y) + bh)
+        h = jnp.hstack([aug, h])
+        y = Who.dot(h)
+        return ((y,h), (y,h))
+
+    xs = jnp.arange(Npred)  # necessary for lax.scan
+    f = partial(_step, model)
+    ((y,h), (ys,hs)) = lax.scan(f, (y0,h0), xs)
+    return ((y,h), (ys,hs))
+
+
+def lstsq_stable(H, labels):
+    U, s, Vh = jax.scipy.linalg.svd(H.T)
+    scale = s[0]
+    n = len(s[jnp.abs(s / scale) > 1e-5])  # Ensure condition number less than 100.000
+    
+    L = labels.T
+
+    v = Vh[:n, :].T
+    uh = U[:, :n].T
+
+    wout = jnp.dot(jnp.dot(L, v) / s[:n], uh)
+    return wout
+
+
 def apply_esn(params, xs, h0):
     def _step(params, x, h):
         (Wih, Whh, bh) = params
@@ -115,3 +157,12 @@ def apply_esn(params, xs, h0):
 
     f = partial(_step, params)
     return lax.scan(f, xs, h)
+
+
+def split_train_label_pred(sequence, train_length, pred_length):
+    train_end = train_length + 1
+    train_seq = sequence[:train_end]
+    inputs = train_seq[:-1]
+    labels = train_seq[1:]
+    pred_labels = sequence[train_end:train_end + pred_length]
+    return inputs, labels, pred_labels
