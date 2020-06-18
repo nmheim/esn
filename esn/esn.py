@@ -68,16 +68,21 @@ def sparse_esncell(input_dim, hidden_dim,
              jax.device_put(bh))
     return model
 
-def apply_esn(params, xs, h0):
-    def _step(params, x, h):
-        (Wih, Whh, bh) = params
-        h = jnp.tanh(Whh.dot(h) + Wih.dot(x) + bh)
-        return (h, h)
-
-    f = partial(_step, params)
-    return lax.scan(f, xs, h)
-
 def apply_sparse_esn(params, xs, h0):
+    """
+    Apply and ESN defined by params (as in created from `sparse_esncell`) to
+    each input in xs with the initial state h0. Each new input uses the updated
+    state from the previous step.
+
+    Arguments:
+        params: An ESN tuple (Wih, Whh, bh)
+        xs: Array of inputs. Time in first dimension.
+        h0: Initial hidden state
+    Returns:
+        (h,hs) where
+        h: Final hidden state
+        hs: All hidden states
+    """
     def _step(params, h, x):
         (Wih, (Whh, shape), bh) = params
         h = jnp.tanh(sp_dot(Whh, h, shape[0]) + Wih.dot(x) + bh)
@@ -100,3 +105,15 @@ def generate_state_matrix(esn, inputs, Ntrans):
     I0 = inputs[Ntrans:]
     ones = jnp.ones((Ntrain-Ntrans,1))
     return jnp.concatenate([ones,I0,H0],axis=1)
+
+
+def apply_esn(params, xs, h0):
+    def _step(params, x, h):
+        (Wih, Whh, bh) = params
+        h = jnp.tanh(Whh.dot(h) + Wih.dot(x) + bh)
+        return (h, h)
+
+    f = partial(_step, params)
+    return lax.scan(f, xs, h)
+
+
