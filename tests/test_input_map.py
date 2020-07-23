@@ -20,6 +20,9 @@ def test_make_operation():
 
     op = make_operation(RAND_SPEC)
     assert op(img).shape == (op_output_size(RAND_SPEC, IMG_SHAPE),)
+    # test that this also works for vectors
+    vec = img.reshape(-1)
+    assert op(vec).shape == (op_output_size(RAND_SPEC, IMG_SHAPE),)
 
     # op = make_mapih_operation(spec)
     # assert op(img).shape == (2*2,)

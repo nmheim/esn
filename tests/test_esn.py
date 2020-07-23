@@ -16,7 +16,8 @@ def test_sparse_esn_sines():
     Npred       = 500   # Number of steps for free-running prediction
     hidden_size = 1500  # size of reservoir
 
-    esn = sparse_esncell(1,hidden_size, spectral_radius=1.5, density=0.05)
+    specs = [{"type":"random_weights", "input_size":1, "hidden_size":hidden_size}]
+    esn = sparse_esncell(specs, hidden_size, spectral_radius=1.5, density=0.05)
 
     xs   = jnp.linspace(0,30*2*jnp.pi,Ntrain+Npred+1)
     data = jnp.sin(xs).reshape(-1, 1)

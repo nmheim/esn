@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 
+from esn.input_map import make_input_map
 from esn.jaxsparse import sp_dot
 
 
@@ -39,7 +40,7 @@ def sparse_esn_reservoir(size, spectral_radius, density, symmetric):
     return matrix
 
 
-def sparse_esncell(input_size, hidden_size,
+def sparse_esncell(input_map_specs, hidden_size,
                    spectral_radius=1.5, density=0.1):
     """
     Create an ESN with input, and hidden weights represented as a tuple:
@@ -49,18 +50,19 @@ def sparse_esncell(input_size, hidden_size,
         Whh = (((values, rows, cols), shape)
 
     Arguments:
-        input_size: ESN input size
+        input_map_specs: List of dicts that can be passed to
+          `esn.input_map.make_input_map`
         hidden_size: ESN hidden size
         spectral_radius: spectral radius of Whh
         density: density of Whh
     Returns:
         (Wih, Whh, bh)
     """
-    Wih = np.random.uniform(-1, 1, (hidden_size,input_size))
+    map_ih = make_input_map(input_map_specs)
     Whh = sparse_esn_reservoir(hidden_size, spectral_radius, density, False)
     Whh = Whh.tocoo()
     bh  = np.random.uniform(-1, 1, (hidden_size,))
-    model = (jax.device_put(Wih),
+    model = (map_ih,
              ((jax.device_put(Whh.data),
               jax.device_put(Whh.row),
               jax.device_put(Whh.col)),
@@ -84,8 +86,8 @@ def apply_sparse_esn(params, xs, h0):
         hs: All hidden states
     """
     def _step(params, h, x):
-        (Wih, (Whh, shape), bh) = params
-        h = jnp.tanh(sp_dot(Whh, h, shape[0]) + Wih.dot(x) + bh)
+        (map_ih, (Whh, shape), bh) = params
+        h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(x) + bh)
         return (h, h)
 
     f = partial(_step, params)
@@ -101,14 +103,12 @@ def predict_sparse_esn(model, y0, h0, Npred):
       h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
       y_{n+1} = Who h_{n+1}
     """
-    
-    (Wih,Whh,bh,Who) = model
     aug_len = y0.shape[0]+1  # augment hidden state h
 
     def _step(params, input, xs):
-        (Wih,(Whh,shape),bh,Who) = params
+        (map_ih,(Whh,shape),bh,Who) = params
         (y,h_augmented) = input
-        h = jnp.tanh(sp_dot(Whh,h_augmented[aug_len:],shape[0]) + Wih.dot(y) + bh)
+        h = jnp.tanh(sp_dot(Whh,h_augmented[aug_len:],shape[0]) + map_ih(y) + bh)
         h = jnp.hstack([[1.], y, h])
         y = Who.dot(h)
         return ((y,h), (y,h))
@@ -118,12 +118,14 @@ def predict_sparse_esn(model, y0, h0, Npred):
     ((y,h), (ys,hs)) = lax.scan(f, (y0,h0), xs)
     return ((y,h), (ys,hs))
 
+def get_hidden_size(esn):
+    (_,(Whh,shape),_) = esn
+    return shape[0]
 
 def sparse_generate_state_matrix(esn, inputs, Ntrans):
-    (Whh,Wih,bh) = esn
-    (hidden_size, Ntrain) = (Whh.shape[0], inputs.shape[0])
+    Ntrain = inputs.shape[0]
            
-    h0 = jnp.zeros(hidden_size)
+    h0 = jnp.zeros(get_hidden_size(esn))
 
     (_,H) = apply_sparse_esn(esn, inputs, h0)
     H = jnp.vstack(H)
