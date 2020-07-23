@@ -1,5 +1,4 @@
 import numpy as np
-import jax.numpy as jnp
 import scipy.stats as stats
 from scipy import sparse
 from functools import partial
@@ -69,7 +68,7 @@ def sparse_esncell(input_dim, hidden_dim,
              jax.device_put(bh))
     return model
 
-def sparse_apply_esn(params, xs, h0):
+def apply_sparse_esn(params, xs, h0):
     """
     Apply and ESN defined by params (as in created from `sparse_esncell`) to
     each input in xs with the initial state h0. Each new input uses the updated
@@ -93,7 +92,7 @@ def sparse_apply_esn(params, xs, h0):
     (h, hs) = lax.scan(f, h0, xs)
     return (h, hs)
 
-def sparse_predict_esn(model, y0, h0, Npred):
+def predict_sparse_esn(model, y0, h0, Npred):
     """
     Given a trained model = (Wih,Whh,bh,Who), a start internal state h0, and input
     y0 predict in free-running mode for Npred steps into the future, with
@@ -126,7 +125,7 @@ def sparse_generate_state_matrix(esn, inputs, Ntrans):
            
     h0 = jnp.zeros(hidden_dim)
 
-    (_,H) = sparse_apply_esn(esn, inputs, h0)
+    (_,H) = apply_sparse_esn(esn, inputs, h0)
     H = jnp.vstack(H)
 
     H0 = H[Ntrans:]

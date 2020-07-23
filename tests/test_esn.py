@@ -3,14 +3,13 @@ from jax.config import config
 config.update("jax_enable_x64", True)
 
 from esn.sparse_esn import (sparse_esncell,
-                     sparse_apply_esn,
                      sparse_generate_state_matrix,
-                     sparse_predict_esn)
+                     predict_sparse_esn)
 from esn.dense_esn import (lstsq_stable,
                      split_train_label_pred)
 
 
-def test_sparse_esn():
+def test_sparse_esn_sines():
     # Set up data for training and prediction
     Ntrans     = 500   # Number of transient initial steps before training
     Ntrain     = 2500  # Number of steps to train on
@@ -39,7 +38,7 @@ def test_sparse_esn():
 
     y0 = labels[-1]
     h0 = H[-1]
-    (y,h), (ys,hs) = sparse_predict_esn(model, y0, h0, Npred)
+    (y,h), (ys,hs) = predict_sparse_esn(model, y0, h0, Npred)
     assert y.shape == (1,)
     assert ys.shape == (Npred, 1)
     assert h.shape == (hidden_dim+2,)
@@ -52,6 +51,7 @@ def test_sparse_esn():
     # plt.show()
     assert jnp.mean(jnp.abs(ys - pred_labels)) < 1e-5
 
+# dense esncell still has to be implemented...
 def tst_esn():
     # Set up data for training and prediction
     Ntrans     = 500   # Number of transient initial steps before training
@@ -98,4 +98,4 @@ def tst_esn():
 
 
 if __name__ == "__main__":
-    test_sparse_esn()
+    test_sparse_esn_sines()
