@@ -12,7 +12,7 @@ RAND_SPEC = {"type":"random_weights",
             "input_size":IMG_SHAPE[0]*IMG_SHAPE[1],
             "hidden_size":20}
 PIXEL_SPEC = {"type":"pixels", "size":(2,2)}
-CONV_SPEC = {"type":"conv", "size":(2,2), "kernel":"gauss", "mode":"valid"}
+CONV_SPEC = {"type":"conv", "size":(2,2), "kernel":"gauss"}
 
 
 def test_make_operation():
