@@ -109,9 +109,8 @@ def sparse_predict_esn(model, y0, h0, Npred):
     def _step(params, input, xs):
         (Wih,(Whh,shape),bh,Who) = params
         (y,h_augmented) = input
-        aug, h = h_augmented[:aug_len], h_augmented[aug_len:]
-        h = jnp.tanh(sp_dot(Whh,h,shape[0]) + Wih.dot(y) + bh)
-        h = jnp.hstack([aug, h])
+        h = jnp.tanh(sp_dot(Whh,h_augmented[aug_len:],shape[0]) + Wih.dot(y) + bh)
+        h = jnp.hstack([[1.], y, h])
         y = Who.dot(h)
         return ((y,h), (y,h))
 
