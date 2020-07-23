@@ -41,10 +41,10 @@ def make_pixel_op(spec):
 
 
 def make_random_weighs_op(spec):
-    idim, hdim = spec["input_dim"], spec["hidden_dim"]
-    Wih = np.random.uniform(-1, 1, (hdim, idim))
+    isize, hsize = spec["input_size"], spec["hidden_size"]
+    Wih = np.random.uniform(-1, 1, (hsize, isize))
     Wih = jax.device_put(Wih)
-    bh  = np.random.uniform(-1, 1, (hdim,))
+    bh  = np.random.uniform(-1, 1, (hsize,))
     bh  = jax.device_put(bh)
     return lambda img: Wih.dot(img.reshape(-1)) + bh
 
@@ -85,7 +85,7 @@ def op_output_size(spec, input_shape):
         elif spec["mode"] == "same":
             size = input_shape[0] * input_shape[1]
     elif spec["type"] == "random_weights":
-        size = spec["hidden_dim"]
+        size = spec["hidden_size"]
     elif spec["type"] == "gradient":
         size = input_shape[0] * input_shape[1] * 2  # specor 2d pictures
     elif spec["type"] == "compose":

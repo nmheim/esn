@@ -6,11 +6,11 @@ import jax.numpy as jnp
 from jax import lax
 
 
-def dense_esn_reservoir(dim, spectral_radius, density):
+def dense_esn_reservoir(size, spectral_radius, density):
     pass
 
 
-def dense_esncell(input_dim, hidden_dim, spectral_radius=1.5, density=0.1):
+def dense_esncell(input_size, hidden_size, spectral_radius=1.5, density=0.1):
     pass
 
 
@@ -46,9 +46,9 @@ def dense_predict_esn(model, y0, h0, Npred):
 
 def dense_generate_state_matrix(esn, inputs, Ntrans):
     (Whh,Wih,bh) = esn
-    (hidden_dim, Ntrain) = (Whh.shape[0], inputs.shape[0])
+    (hidden_size, Ntrain) = (Whh.shape[0], inputs.shape[0])
            
-    h0 = jnp.zeros(hidden_dim)
+    h0 = jnp.zeros(hidden_size)
 
     (_,H) = dense_apply_esn(esn, inputs, h0)
     H = jnp.vstack(H)

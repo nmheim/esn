@@ -9,8 +9,8 @@ from esn.input_map import (make_operation, make_input_map, op_output_size,
 
 IMG_SHAPE = (5,5)
 RAND_SPEC = {"type":"random_weights",
-            "input_dim":IMG_SHAPE[0]*IMG_SHAPE[1],
-            "hidden_dim":20}
+            "input_size":IMG_SHAPE[0]*IMG_SHAPE[1],
+            "hidden_size":20}
 PIXEL_SPEC = {"type":"pixels", "size":(2,2)}
 CONV_SPEC = {"type":"conv", "size":(2,2), "kernel":"gauss", "mode":"valid"}
 
