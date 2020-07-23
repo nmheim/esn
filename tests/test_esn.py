@@ -25,7 +25,7 @@ def test_sparse_esn_sines():
     inputs, labels, pred_labels = split_train_label_pred(data,Ntrain,Npred)
 
     H = sparse_generate_state_matrix(esn, inputs, Ntrans)
-    assert H.shape == (Ntrain-Ntrans, hidden_size+2)
+    assert H.shape == (Ntrain-Ntrans, hidden_size+1)
     # plt.plot(H)
     # plt.show()
 
@@ -42,8 +42,8 @@ def test_sparse_esn_sines():
     (y,h), (ys,hs) = predict_sparse_esn(model, y0, h0, Npred)
     assert y.shape == (1,)
     assert ys.shape == (Npred, 1)
-    assert h.shape == (hidden_size+2,)
-    assert hs.shape == (Npred, hidden_size+2)
+    assert h.shape == (hidden_size+1,)
+    assert hs.shape == (Npred, hidden_size+1)
 
     # plt.plot(ys, label="Truth")
     # plt.plot(pred_labels.reshape(-1), label="Prediction")

@@ -41,15 +41,18 @@ Possible operations specs are:
 """
 def make_operation(spec):
     if spec["type"] == "pixels":
-        operation = make_pixel_op(spec)
+        operation = make_pixels_op(spec)
     elif spec["type"] == "random_weights":
         operation = make_random_weighs_op(spec)
     elif spec["type"] == "conv":
         operation = make_conv_op(spec)
+    elif spec["type"] == "pixels":
+        operation = make_pixels_op(spec)
     else:
         raise ValueError(f"Unknown input map spec: {spec['type']}")
     #  TODO: normalize all of it? such that all outputs are between (-1,1)? # 
     return operation
+
 
 def map_output_size(input_map_specs, input_shape):
     return sum(map(lambda s: op_output_size(s,input_shape), input_map_specs))
@@ -66,12 +69,14 @@ def op_output_size(spec, input_shape):
     elif spec["type"] == "compose":
         size = sum(map(output_size, spec["operations"]))
     elif spec["type"] == "pixels":
-        size  = shape[0] * shape[1]
+        shape = spec["size"]
+        size = shape[0] * shape[1]
     return size
 
 
-def make_pixel_op(spec):
-    return lambda img: image.resize(img, spec["size"], "bilinear").reshape(-1)
+def make_pixels_op(spec):
+    #return lambda img: image.resize(img, spec["size"], "bilinear").reshape(-1)
+    return lambda img: img.reshape(-1)
 
 
 def make_random_weighs_op(spec):
