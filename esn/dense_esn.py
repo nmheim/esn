@@ -57,25 +57,3 @@ def dense_generate_state_matrix(esn, inputs, Ntrans):
     I0 = inputs[Ntrans:]
     ones = jnp.ones((Ntrain-Ntrans,1))
     return jnp.concatenate([ones,I0,H0],axis=1)
-
-def lstsq_stable(H, labels):
-    U, s, Vh = jax.scipy.linalg.svd(H.T)
-    scale = s[0]
-    n = len(s[jnp.abs(s / scale) > 1e-5])  # Ensure condition number less than 100.000
-    
-    L = labels.T
-
-    v = Vh[:n, :].T
-    uh = U[:, :n].T
-
-    wout = jnp.dot(jnp.dot(L, v) / s[:n], uh)
-    return wout
-
-
-def split_train_label_pred(sequence, train_length, pred_length):
-    train_end = train_length + 1
-    train_seq = sequence[:train_end]
-    inputs = train_seq[:-1]
-    labels = train_seq[1:]
-    pred_labels = sequence[train_end:train_end + pred_length]
-    return inputs, labels, pred_labels
