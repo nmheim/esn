@@ -70,14 +70,14 @@ def sparse_esncell(input_map_specs, hidden_size,
              jax.device_put(bh))
     return model
 
-def apply_sparse_esn(params, xs, h0):
+def apply_sparse_esn(model, xs, h0):
     """
-    Apply and ESN defined by params (as in created from `sparse_esncell`) to
+    Apply and ESN defined by model (as in created from `sparse_esncell`) to
     each input in xs with the initial state h0. Each new input uses the updated
     state from the previous step.
 
     Arguments:
-        params: An ESN tuple (Wih, Whh, bh)
+        model: An ESN tuple (Wih, Whh, bh)
         xs: Array of inputs. Time in first dimension.
         h0: Initial hidden state
     Returns:
@@ -85,12 +85,12 @@ def apply_sparse_esn(params, xs, h0):
         h: Final hidden state
         hs: All hidden states
     """
-    def _step(params, h, x):
-        (map_ih, (Whh, shape), bh) = params
+    def _step(model, h, x):
+        (map_ih, (Whh, shape), bh) = model
         h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(x) + bh)
         return (h, h)
 
-    f = partial(_step, params)
+    f = partial(_step, model)
     (h, hs) = lax.scan(f, h0, xs)
     return (h, hs)
 
