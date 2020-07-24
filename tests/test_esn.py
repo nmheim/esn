@@ -5,8 +5,8 @@ config.update("jax_enable_x64", True)
 from esn.sparse_esn import (sparse_esncell,
                      sparse_generate_state_matrix,
                      predict_sparse_esn)
-from esn.dense_esn import (lstsq_stable,
-                     split_train_label_pred)
+from esn.utils import split_train_label_pred
+from esn.optimize import lstsq_stable
 
 
 def test_sparse_esn_sines():
@@ -15,8 +15,9 @@ def test_sparse_esn_sines():
     Ntrain      = 2500  # Number of steps to train on
     Npred       = 500   # Number of steps for free-running prediction
     hidden_size = 1500  # size of reservoir
+    input_size  = 1
 
-    specs = [{"type":"random_weights", "input_size":1, "hidden_size":hidden_size}]
+    specs = [{"type":"random_weights", "input_size":input_size, "hidden_size":hidden_size}]
     esn = sparse_esncell(specs, hidden_size, spectral_radius=1.5, density=0.05)
 
     xs   = jnp.linspace(0,30*2*jnp.pi,Ntrain+Npred+1)
@@ -25,7 +26,7 @@ def test_sparse_esn_sines():
     inputs, labels, pred_labels = split_train_label_pred(data,Ntrain,Npred)
 
     H = sparse_generate_state_matrix(esn, inputs, Ntrans)
-    assert H.shape == (Ntrain-Ntrans, hidden_size+1)
+    assert H.shape == (Ntrain-Ntrans, hidden_size+input_size+1)
     # plt.plot(H)
     # plt.show()
 
@@ -42,8 +43,8 @@ def test_sparse_esn_sines():
     (y,h), (ys,hs) = predict_sparse_esn(model, y0, h0, Npred)
     assert y.shape == (1,)
     assert ys.shape == (Npred, 1)
-    assert h.shape == (hidden_size+1,)
-    assert hs.shape == (Npred, hidden_size+1)
+    assert h.shape == (hidden_size+input_size+1,)
+    assert hs.shape == (Npred, hidden_size+input_size+1)
 
     # plt.plot(ys, label="Truth")
     # plt.plot(pred_labels.reshape(-1), label="Prediction")
@@ -52,6 +53,7 @@ def test_sparse_esn_sines():
     # plt.show()
     assert jnp.mean(jnp.abs(ys - pred_labels)) < 1e-5
 
+"""
 # dense esncell still has to be implemented...
 def tst_esn():
     # Set up data for training and prediction
@@ -96,6 +98,7 @@ def tst_esn():
     plt.title("500 step prediction vs. truth")
     plt.legend()
     plt.show()
+"""
 
 
 if __name__ == "__main__":
