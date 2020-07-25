@@ -52,7 +52,7 @@ def make_operation(spec):
     elif optype == "gradient":
         operation = lambda img: jnp.concatenate(jnp.gradient(img)).reshape(-1)
     elif optype == "dct":
-        operation = lambda img: dct2(img, *spec["size"]).reshape(-1)
+        operation = make_dct_op(spec)
     else:
         raise ValueError(f"Unknown input map spec: {spec['type']}")
     #  TODO: normalize all of it? such that all outputs are between (-1,1)? # 
@@ -104,6 +104,22 @@ def make_conv_op(spec):
         out = lax.conv(img, kernel, (1,1), "VALID")
         return out.reshape(-1)
     return operation
+
+
+def make_dct_op(spec):
+    #@jax.custom_vjp
+    #def _dct2(jax_img, n, m):
+    #    x = np.asarray(jax_img)
+    #    x = dct2(x, n, m).reshape(-1)
+    #    return jax.device_put(x)
+    #def _dct2_rev(primals, tangents):
+    #    raise
+    #    return primals, tangents
+    #def _dct2_fwd(primals, tangens):
+    #    raise
+    #    return primals, tangents
+    #_dct2.defvjp(_dct2_fwd, _dct2_rev)
+    return lambda img: dct2(img, *spec["size"]).reshape(-1)
 
 
 def get_kernel(kernel_shape, kernel_type):

@@ -39,7 +39,7 @@ def test_make_operation():
 
 
 def test_input_map():
-    img = np.random.uniform(size=(5,5))
+    img = jax.device_put(np.random.uniform(size=(IMG_SHAPE)))
     map_ih = make_input_map(SPECS)
     assert map_ih(img).shape == (map_output_size(SPECS, IMG_SHAPE),)
 
