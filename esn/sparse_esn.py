@@ -110,7 +110,7 @@ def predict_sparse_esn(model, y0, h0, Npred):
         (y,h_augmented) = input
         h = h_augmented[aug_len:]
         h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(y) + bh)
-        h = jnp.hstack([[1.], y, h])
+        h = jnp.hstack([[1.], y.reshape(-1), h])
         y = Who.dot(h)
         return ((y,h), (y,h))
 
@@ -132,6 +132,6 @@ def sparse_generate_state_matrix(esn, inputs, Ntrans):
     H = jnp.vstack(H)
 
     H0 = H[Ntrans:]
-    I0 = inputs[Ntrans:]
+    I0 = inputs[Ntrans:].reshape(Ntrain-Ntrans,-1)
     ones = jnp.ones((Ntrain-Ntrans,1))
     return jnp.concatenate([ones,I0,H0], axis=1)
