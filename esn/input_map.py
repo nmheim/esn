@@ -4,6 +4,8 @@ import jax.numpy as jnp
 from jax import lax
 #from jax import image TODO: why does this not work???
 
+from esn.dct import dct2
+
 
 """
 Creates a function `input_map` that can be called with a 2D input image.
@@ -40,14 +42,17 @@ Possible operations specs are:
       {"type":"random_weights", "input_size":10, "hidden_size":20}
 """
 def make_operation(spec):
-    if spec["type"] == "pixels":
+    optype = spec["type"]
+    if optype == "pixels":
         operation = make_pixels_op(spec)
-    elif spec["type"] == "random_weights":
+    elif optype == "random_weights":
         operation = make_random_weighs_op(spec)
-    elif spec["type"] == "conv":
+    elif optype == "conv":
         operation = make_conv_op(spec)
-    elif spec["type"] == "pixels":
-        operation = make_pixels_op(spec)
+    elif optype == "gradient":
+        operation = lambda img: jnp.concatenate(jnp.gradient(img)).reshape(-1)
+    elif optype == "dct":
+        operation = lambda img: dct2(img, *spec["size"]).reshape(-1)
     else:
         raise ValueError(f"Unknown input map spec: {spec['type']}")
     #  TODO: normalize all of it? such that all outputs are between (-1,1)? # 
@@ -59,18 +64,21 @@ def map_output_size(input_map_specs, input_shape):
 
 
 def op_output_size(spec, input_shape):
-    if spec["type"] == "conv":
+    optype = spec["type"]
+    if optype == "conv":
         (m,n) = spec["size"]
         size = (input_shape[0]-m+1) * (input_shape[1]-n+1)
-    elif spec["type"] == "random_weights":
+    elif optype == "random_weights":
         size = spec["hidden_size"]
-    elif spec["type"] == "gradient":
+    elif optype == "gradient":
         size = input_shape[0] * input_shape[1] * 2  # specor 2d pictures
-    elif spec["type"] == "compose":
+    elif optype == "compose":
         size = sum(map(output_size, spec["operations"]))
-    elif spec["type"] == "pixels":
+    elif optype in ["pixels", "dct"]:
         shape = spec["size"]
         size = shape[0] * shape[1]
+    else:
+        raise ValueError(f"Unknown input map spec: {spec['type']}")
     return size
 
 
