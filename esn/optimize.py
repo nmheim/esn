@@ -2,6 +2,9 @@ import jax
 import jax.numpy as jnp
 
 def lstsq_stable(H, labels):
+    if labels.ndim != 2:
+        raise ValueError("Labels must have shape (time, features)")
+
     U, s, Vh = jax.scipy.linalg.svd(H.T)
     scale = s[0]
     n = len(s[jnp.abs(s / scale) > 1e-5])  # Ensure condition number less than 100.000
