@@ -14,7 +14,7 @@ def dct_from_fft(a):
     n = a.shape[0]
     assert((n&1)==0)
 
-    # abcdef -> ace fdb -- one step down in recursive FFT-definition to get from level 2n-fft to n-fft
+    # abcdef -> ace fdb -- one step down in recursive FFT-definition to get from even level 2n-fft to full n-fft
     c  = jnp.concatenate([a[::2],a[::-2]])
     ks           = jnp.arange(n)
     omega_shift  = 2*jnp.exp(-1j*pi/(2*n)*ks)       # Can be precalculated 
@@ -70,7 +70,8 @@ def isct2(Fkk, basis1, basis2):
 
 def dct2(Fxx, nk1, nk2):
     """Two dimensional discrete cosine transform"""
-    Fkk = dctn(Fxx, norm='ortho')[:nk1, :nk2]
+#    Fkk = dctn(Fxx, norm='ortho')[:nk1, :nk2]
+    Fkk = dctn_from_fft(Fxx,axes=[0,1])
     return Fkk
 
 
