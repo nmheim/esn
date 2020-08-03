@@ -1,3 +1,6 @@
+import joblib
+import numpy as np
+
 def split_train_label_pred(sequence, train_length, pred_length):
     train_end = train_length + 1
     train_seq = sequence[:train_end]
@@ -20,3 +23,10 @@ def normalize(data, vmin=None, vmax=None):
         return np.zeros_like(data)
     else:
         return (data - vmin) / (vmax-vmin)
+
+
+def _fromfile(filename):
+    with open(filename, "rb") as fi:
+        m = joblib.load(fi)
+        m.device_put()
+    return m

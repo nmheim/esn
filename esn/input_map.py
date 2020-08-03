@@ -6,6 +6,16 @@ from jax import lax
 from jax import image
 
 from esn.dct import dct2
+from esn.utils import _fromfile
+
+class Operation:
+
+    @classmethod
+    def fromfile(cls, filename):
+        return _fromfile(filename)
+
+    def device_put(self):
+        pass
 
 
 """
@@ -22,7 +32,7 @@ Returns:
     A function that can be called with a 2D array and that outputs
     a 1D array (concatenated output of each op).
 """
-class InputMap:
+class InputMap(Operation):
     def __init__(self, specs):
         self.ops = [make_operation(s) for s in specs]
 
@@ -91,7 +101,7 @@ def op_output_size(spec, input_shape):
     return size
 
 
-class PixelsOp:
+class PixelsOp(Operation):
     def __init__(self, size):
         self.size = size
     
@@ -99,11 +109,8 @@ class PixelsOp:
     def __call__(self, img):
         return image.resize(img, self.size, "bilinear").reshape(-1)
 
-    def device_put(self):
-        pass
 
-
-class RandWeightsOp:
+class RandWeightsOp(Operation):
     def __init__(self, input_size, hidden_size):
         self.isize = input_size
         self.hsize = hidden_size
@@ -121,7 +128,7 @@ class RandWeightsOp:
         self.bh  = jax.device_put(self.bh)
 
 
-class ScaleOp:
+class ScaleOp(Operation):
     def __init__(self, factor, op):
         self.a = factor
         self.op = op
@@ -134,16 +141,13 @@ class ScaleOp:
         self.op.device_put()
 
 
-class GradientOp:
+class GradientOp(Operation):
     @partial(jax.jit, static_argnums=(0,))
     def __call__(self, img):
         return jnp.concatenate(jnp.gradient(img)).reshape(-1)
 
-    def device_put(self):
-        pass
 
-
-class ConvOp:
+class ConvOp(Operation):
     def __init__(self, size, kernel):
         self.size = size
         self.name = kernel
@@ -160,16 +164,13 @@ class ConvOp:
         self.kernel = jax.device_put(self.kernel)
 
 
-class DCTOp():
+class DCTOp(Operation):
     def __init__(self, size):
         self.size = size
 
     @partial(jax.jit, static_argnums=(0,))
     def __call__(self, img):
         return dct2(img, *self.size).reshape(-1)
-
-    def device_put(self):
-        pass
 
 
 def get_kernel(kernel_shape, kernel_type):
