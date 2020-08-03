@@ -31,12 +31,12 @@ class SparseESN:
         density: density of Whh
     """
 
-    def __init__(self, input_map_specs, hidden_size,
+    def __init__(self, map_ih, hidden_size,
                  spectral_radius=1.5, density=0.1):
         self.hidden_size = hidden_size
         self.spectral_radius = spectral_radius
 
-        self.map_ih = InputMap(input_map_specs)
+        self.map_ih = map_ih
 
         Whh = sparse_esn_reservoir(hidden_size, spectral_radius, density, False)
         Whh = Whh.tocoo()

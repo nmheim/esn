@@ -5,8 +5,7 @@ import jax.numpy as jnp
 from jax.config import config
 config.update("jax_enable_x64", True)
 
-from esn.input_map import (make_operation, InputMap, op_output_size,
-                           map_output_size)
+from esn.input_map import (make_operation, InputMap)
 
 
 IMG_SHAPE = (6,6)
@@ -29,7 +28,7 @@ SPECS = [RAND_SPEC, CONV_SPEC, PIXEL_SPEC, GRAD_SPEC, DCT_SPEC]
 def _testop(spec, tmpdir):
     img = jax.device_put(np.random.uniform(size=IMG_SHAPE))
     op = make_operation(spec)
-    assert op(img).shape == (op_output_size(spec, IMG_SHAPE),)
+    assert op(img).shape == (op.output_size(IMG_SHAPE),)
 
     with open(tmpdir / "op.pkl", "wb") as fi:
         joblib.dump(op, fi) 
@@ -41,7 +40,7 @@ def test_rand_operation(tmpdir):
     op = _testop(RAND_SPEC, tmpdir)
     img = jax.device_put(np.random.uniform(size=IMG_SHAPE))
     vec = img.reshape(-1)
-    assert op(vec).shape == (op_output_size(RAND_SPEC, IMG_SHAPE),)
+    assert op(vec).shape == (op.output_size(IMG_SHAPE),)
 
 def test_pixel_operation(tmpdir):
     op = _testop(PIXEL_SPEC, tmpdir)
@@ -58,7 +57,7 @@ def test_dct_operation(tmpdir):
 def test_input_map(tmpdir):
     img = jax.device_put(np.random.uniform(size=(IMG_SHAPE)))
     op = InputMap(SPECS)
-    assert op(img).shape == (map_output_size(SPECS, IMG_SHAPE),)
+    assert op(img).shape == (op.output_size(IMG_SHAPE),)
 
     with open(tmpdir / "op.pkl", "wb") as fi:
         joblib.dump(op, fi) 

@@ -43,6 +43,9 @@ class InputMap(Operation):
     def device_put(self):
         for op in self.ops: op.device_put()
 
+    def output_size(self, input_shape):
+        return sum([op.output_size(input_shape) for op in self.ops])
+
 
 """
 Creates an `operation` function from an operation spec.
@@ -78,28 +81,6 @@ def make_operation(spec, data=None):
     return ScaleOp(spec["factor"], op)
 
 
-def map_output_size(input_map_specs, input_shape):
-    return sum(map(lambda s: op_output_size(s,input_shape), input_map_specs))
-
-
-def op_output_size(spec, input_shape):
-    optype = spec["type"]
-    if optype == "conv":
-        (m,n) = spec["size"]
-        size = (input_shape[0]-m+1) * (input_shape[1]-n+1)
-    elif optype == "random_weights":
-        size = spec["hidden_size"]
-    elif optype == "gradient":
-        size = input_shape[0] * input_shape[1] * 2  # specor 2d pictures
-    elif optype == "compose":
-        size = sum(map(output_size, spec["operations"]))
-    elif optype in ["pixels", "dct"]:
-        shape = spec["size"]
-        size = shape[0] * shape[1]
-    else:
-        raise ValueError(f"Unknown input map spec: {spec['type']}")
-    return size
-
 
 class PixelsOp(Operation):
     def __init__(self, size):
@@ -108,6 +89,9 @@ class PixelsOp(Operation):
     @partial(jax.jit, static_argnums=(0,))
     def __call__(self, img):
         return image.resize(img, self.size, "bilinear").reshape(-1)
+
+    def output_size(self, input_shape):
+        return self.size[0] * self.size[1]
 
 
 class RandWeightsOp(Operation):
@@ -127,6 +111,9 @@ class RandWeightsOp(Operation):
         self.Wih = jax.device_put(self.Wih)
         self.bh  = jax.device_put(self.bh)
 
+    def output_size(self, input_shape):
+        return self.hsize
+
 
 class ScaleOp(Operation):
     def __init__(self, factor, op):
@@ -140,11 +127,17 @@ class ScaleOp(Operation):
     def device_put(self):
         self.op.device_put()
 
+    def output_size(self, input_shape):
+        return self.op.output_size(input_shape)
+
 
 class GradientOp(Operation):
     @partial(jax.jit, static_argnums=(0,))
     def __call__(self, img):
         return jnp.concatenate(jnp.gradient(img)).reshape(-1)
+
+    def output_size(self, input_shape):
+        return input_shape[0] * input_shape[1] * 2
 
 
 class ConvOp(Operation):
@@ -163,6 +156,10 @@ class ConvOp(Operation):
     def device_put(self):
         self.kernel = jax.device_put(self.kernel)
 
+    def output_size(self, input_shape):
+        (m,n) = self.size
+        return (input_shape[0]-m+1) * (input_shape[1]-n+1)
+
 
 class DCTOp(Operation):
     def __init__(self, size):
@@ -171,6 +168,9 @@ class DCTOp(Operation):
     @partial(jax.jit, static_argnums=(0,))
     def __call__(self, img):
         return dct2(img, *self.size).reshape(-1)
+
+    def output_size(self, input_shape):
+        return self.size[0] * self.size[1]
 
 
 def get_kernel(kernel_shape, kernel_type):

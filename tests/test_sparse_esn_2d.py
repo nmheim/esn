@@ -4,8 +4,8 @@ import jax.numpy as jnp
 # from jax.config import config
 # config.update("jax_enable_x64", True)
 
+from esn.input_map import InputMap
 from esn.sparse_esn import SparseESN
-from esn.input_map import map_output_size
 from esn.utils import split_train_label_pred
 from esn.toydata import gauss2d_sequence, mackey2d_sequence
 
@@ -25,8 +25,9 @@ def sparse_esn_2d_train_pred(tmpdir, data, specs,
     img_shape = inputs.shape[1:]
 
     # build esn
-    hidden_size = map_output_size(specs, img_shape)
-    esn = SparseESN(specs, hidden_size, spectral_radius=1.5, density=0.05)
+    map_ih = InputMap(specs)
+    hidden_size = map_ih.output_size(img_shape)
+    esn = SparseESN(map_ih, hidden_size, spectral_radius=1.5, density=0.05)
  
     # compute training states
     H = esn.generate_state_matrix(inputs, Ntrans)
