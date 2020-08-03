@@ -20,10 +20,10 @@ def dct_from_fft(a):
     omega_shift  = 2*jnp.exp(-1j*pi/(2*n)*ks)       # Can be precalculated 
     A  = jnp.fft.fft(c,axis=0) * omega_shift[:,na]
 
-    return A.real.copy()
+    return jnp.array(A.real)
 
 def dctn_from_fft(a,axes=[0]):
-    c = a.copy()
+    c = jnp.array(a)
     for axis in axes:
         c_reordered = dct_from_fft(c.swapaxes(axis,0))
         c = c_reordered.swapaxes(axis,0)
@@ -70,8 +70,7 @@ def isct2(Fkk, basis1, basis2):
 
 def dct2(Fxx, nk1, nk2):
     """Two dimensional discrete cosine transform"""
-#    Fkk = dctn(Fxx, norm='ortho')[:nk1, :nk2]
-    Fkk = dctn_from_fft(Fxx,axes=[0,1])
+    Fkk = dctn_from_fft(Fxx,axes=[0,1])[:nk1, :nk2]
     return Fkk
 
 

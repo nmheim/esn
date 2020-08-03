@@ -8,7 +8,7 @@ from esn.input_map import (make_operation, make_input_map, op_output_size,
                            map_output_size)
 
 
-IMG_SHAPE = (5,5)
+IMG_SHAPE = (6,6)
 
 RAND_SPEC = {"type":"random_weights",
             "input_size":IMG_SHAPE[0]*IMG_SHAPE[1],
