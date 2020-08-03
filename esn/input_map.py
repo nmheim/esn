@@ -56,7 +56,7 @@ def make_operation(spec):
     else:
         raise ValueError(f"Unknown input map spec: {spec['type']}")
     #  TODO: normalize all of it? such that all outputs are between (-1,1)? # 
-    return lambda img: operation(img) * spec["factor"]
+    return jax.jit(lambda img: operation(img) * spec["factor"])
 
 
 def map_output_size(input_map_specs, input_shape):
