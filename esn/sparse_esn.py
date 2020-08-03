@@ -9,6 +9,124 @@ from jax import lax
 
 from esn.input_map import InputMap
 from esn.jaxsparse import sp_dot
+from esn.optimize import lstsq_stable
+from esn.utils import _fromfile
+
+
+class SparseESN:
+    """
+    Create an ESN with input, hidden, and output weights.
+    The hidden matrix (the reservoir) is a sparse matrix represented
+    as a tuple of values, and row/column indices:
+
+        Whh = (values, rows, cols)
+
+    The dense shape of the reservoir is (hidden_size, hidden_size).
+
+    Arguments:
+        input_map_specs: List of dicts that can be passed to
+          `esn.input_map.InputMap`
+        hidden_size: ESN hidden size
+        spectral_radius: spectral radius of Whh
+        density: density of Whh
+    """
+
+    def __init__(self, input_map_specs, hidden_size,
+                 spectral_radius=1.5, density=0.1):
+        self.hidden_size = hidden_size
+        self.spectral_radius = spectral_radius
+
+        self.map_ih = InputMap(input_map_specs)
+
+        Whh = sparse_esn_reservoir(hidden_size, spectral_radius, density, False)
+        Whh = Whh.tocoo()
+        self.Whh = (Whh.data, Whh.row, Whh.col)
+        self.bh = np.random.uniform(-1, 1, (hidden_size,))
+        self.device_put()
+
+    @classmethod
+    def fromfile(cls, filename):
+        return _fromfile(filename)
+        
+    def device_put(self):
+        self.map_ih.device_put()
+        (data, row, col) = self.Whh
+        self.Whh = (jax.device_put(data),
+                    jax.device_put(row),
+                    jax.device_put(col))
+        self.bh = jax.device_put(self.bh)
+        if hasattr(self, "Who"):
+            self.Who = jax.device_put(self.Who)
+
+    @partial(jax.jit, static_argnums=(0,))
+    def apply(self, xs, h0):
+        """
+        Apply the ESN defined to each input in 'xs' with the initial state
+        'h0'. Each new input uses the updated state from the previous step.
+
+        Arguments:
+            xs: Array of inputs. Time in first dimension.
+            h0: Initial hidden state
+        Returns:
+            (h,hs) where
+            h: Final hidden state
+            hs: All hidden states
+        """
+        map_ih, Whh, bh = self.map_ih, self.Whh, self.bh
+        def _step(h, x):
+            h = jnp.tanh(sp_dot(Whh, h, self.hidden_size) + map_ih(x) + bh)
+            return (h, h)
+        (h,hs) = lax.scan(_step, h0, xs)
+        return (h,hs)
+
+    def train(self, states, labels):
+        """Compute the output matrix via least squares."""
+        self.Who = lstsq_stable(states, labels)
+        return self.Who
+
+    @partial(jax.jit, static_argnums=(0,3))
+    def predict(self, y0, h0, Npred):
+        """
+        Given a trained ESN, an initial state 'h0', and input 'y0' predict in
+        free-running mode for 'Npred' steps into the future, with output feeding
+        back y_n as next input:
+        
+          h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
+          y_{n+1} = Who h_{n+1}
+        """
+        if y0.ndim == 1:
+            aug_len = y0.shape[0] + 1
+        elif y0.ndim == 2:
+            aug_len = y0.shape[0] * y0.shape[1] + 1
+        else:
+            raise ValueError("'y0' must either be a vector or a matrix.")
+
+        def _step(input, xs):
+            map_ih, Whh, bh, Who = self.map_ih, self.Whh, self.bh, self.Who
+
+            (y,h_augmented) = input
+            h = h_augmented[aug_len:]
+            h = jnp.tanh(sp_dot(Whh, h, self.hidden_size) + map_ih(y) + bh)
+            h = jnp.hstack([[1.], y.reshape(-1), h])
+            y = Who.dot(h).reshape(y.shape)
+            return ((y,h), (y,h))
+
+        xs = jnp.arange(Npred)  # necessary for lax.scan
+        ((y,h), (ys,hs)) = lax.scan(_step, (y0,h0), xs)
+        return ((y,h), (ys,hs))
+
+    def generate_state_matrix(self, inputs, Ntrans):
+        Ntrain = inputs.shape[0]
+               
+        h0 = jnp.zeros(self.hidden_size)
+
+        (_,H) = self.apply(inputs, h0)
+        H = jnp.vstack(H)
+
+        H0 = H[Ntrans:]
+        I0 = inputs[Ntrans:].reshape(Ntrain-Ntrans,-1)
+        ones = jnp.ones((Ntrain-Ntrans,1))
+        return jnp.concatenate([ones,I0,H0], axis=1)
 
 
 def sparse_esn_reservoir(size, spectral_radius, density, symmetric):
@@ -40,24 +158,6 @@ def sparse_esn_reservoir(size, spectral_radius, density, symmetric):
     return matrix
 
 
-def sparse_esncell(input_map_specs, hidden_size,
-                   spectral_radius=1.5, density=0.1):
-    """
-    Create an ESN with input, and hidden weights represented as a tuple:
-        esn = (Wih, Whh, bh)
-    The hidden matrix (the reservoir) is a sparse matrix in turn represented
-    as a tuple of values, row/column indices, and its dense shape:
-        Whh = (((values, rows, cols), shape)
-
-    Arguments:
-        input_map_specs: List of dicts that can be passed to
-          `esn.input_map.InputMap`
-        hidden_size: ESN hidden size
-        spectral_radius: spectral radius of Whh
-        density: density of Whh
-    Returns:
-        (Wih, Whh, bh)
-    """
     map_ih = InputMap(input_map_specs)
     Whh = sparse_esn_reservoir(hidden_size, spectral_radius, density, False)
     Whh = Whh.tocoo()
@@ -69,74 +169,3 @@ def sparse_esncell(input_map_specs, hidden_size,
              Whh.shape),
              jax.device_put(bh))
     return model
-
-def apply_sparse_esn(model, xs, h0):
-    """
-    Apply and ESN defined by model (as in created from `sparse_esncell`) to
-    each input in xs with the initial state h0. Each new input uses the updated
-    state from the previous step.
-
-    Arguments:
-        model: An ESN tuple (Wih, Whh, bh)
-        xs: Array of inputs. Time in first dimension.
-        h0: Initial hidden state
-    Returns:
-        (h,hs) where
-        h: Final hidden state
-        hs: All hidden states
-    """
-    def _step(model, h, x):
-        (map_ih, (Whh, shape), bh) = model
-        h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(x) + bh)
-        return (h, h)
-
-    f = partial(_step, model)
-    (h, hs) = lax.scan(f, h0, xs)
-    return (h, hs)
-
-def predict_sparse_esn(model, y0, h0, Npred):
-    """
-    Given a trained model = (Wih,Whh,bh,Who), a start internal state h0, and input
-    y0 predict in free-running mode for Npred steps into the future, with
-    output feeding back y_n as next input:
-    
-      h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
-      y_{n+1} = Who h_{n+1}
-    """
-    if y0.ndim == 1:
-        aug_len = y0.shape[0] + 1
-    elif y0.ndim == 2:
-        aug_len = y0.shape[0] * y0.shape[1] + 1
-    else:
-        raise ValueError("'y0' must either be a vector or a matrix.")
-
-    def _step(params, input, xs):
-        (map_ih,(Whh,shape),bh,Who) = params
-        (y,h_augmented) = input
-        h = h_augmented[aug_len:]
-        h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(y) + bh)
-        h = jnp.hstack([[1.], y.reshape(-1), h])
-        y = Who.dot(h).reshape(y.shape)
-        return ((y,h), (y,h))
-
-    xs = jnp.arange(Npred)  # necessary for lax.scan
-    f = partial(_step, model)
-    ((y,h), (ys,hs)) = lax.scan(f, (y0,h0), xs)
-    return ((y,h), (ys,hs))
-
-def get_hidden_size(esn):
-    (_,(Whh,shape),_) = esn
-    return shape[0]
-
-def sparse_generate_state_matrix(esn, inputs, Ntrans):
-    Ntrain = inputs.shape[0]
-           
-    h0 = jnp.zeros(get_hidden_size(esn))
-
-    (_,H) = apply_sparse_esn(esn, inputs, h0)
-    H = jnp.vstack(H)
-
-    H0 = H[Ntrans:]
-    I0 = inputs[Ntrans:].reshape(Ntrain-Ntrans,-1)
-    ones = jnp.ones((Ntrain-Ntrans,1))
-    return jnp.concatenate([ones,I0,H0], axis=1)

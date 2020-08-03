@@ -33,10 +33,7 @@ def _testop(spec, tmpdir):
 
     with open(tmpdir / "op.pkl", "wb") as fi:
         joblib.dump(op, fi) 
-    with open(tmpdir / "op.pkl", "rb") as fi:
-        pkl_op = joblib.load(fi)
-
-    pkl_op.device_put()
+    pkl_op = type(op).fromfile(tmpdir / "op.pkl")
     assert type(pkl_op(img)) == type(img)
     return op
 
@@ -65,10 +62,7 @@ def test_input_map(tmpdir):
 
     with open(tmpdir / "op.pkl", "wb") as fi:
         joblib.dump(op, fi) 
-    with open(tmpdir / "op.pkl", "rb") as fi:
-        pkl_op = joblib.load(fi)
-
-    pkl_op.device_put()
+    pkl_op = InputMap.fromfile(tmpdir / "op.pkl")
     assert type(pkl_op(img)) == type(img)
 
 

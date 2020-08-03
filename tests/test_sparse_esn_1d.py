@@ -1,16 +1,14 @@
+import joblib
 import jax.numpy as jnp
 from jax.config import config
 config.update("jax_enable_x64", True)
 
-from esn.sparse_esn import (sparse_esncell,
-                     sparse_generate_state_matrix,
-                     predict_sparse_esn)
+from esn.sparse_esn import SparseESN
 from esn.utils import split_train_label_pred
 from esn.toydata import mackey_sequence
-from esn.optimize import lstsq_stable
 
 
-def sparse_esn_1d_train_pred(data,
+def sparse_esn_1d_train_pred(tmpdir, data,
                              Ntrans=500,        # Number of transient initial steps before training
                              Ntrain=2500,       # Number of steps to train on
                              Npred=500,         # Number of steps for free-running prediction
@@ -29,21 +27,22 @@ def sparse_esn_1d_train_pred(data,
               "input_size":input_size,
               "hidden_size":hidden_size,
               "factor": 1.0}]
-    esn = sparse_esncell(specs, hidden_size, spectral_radius=1.5, density=0.05)
+    #esn = sparse_esncell(specs, hidden_size, spectral_radius=1.5, density=0.05)
+    esn = SparseESN(specs, hidden_size, spectral_radius=1.5, density=0.05)
 
     data = data.reshape(-1, 1)
     inputs, labels, pred_labels = split_train_label_pred(data,Ntrain,Npred)
 
-    H = sparse_generate_state_matrix(esn, inputs, Ntrans)
+    H = esn.generate_state_matrix(inputs, Ntrans)
     assert H.shape == (Ntrain-Ntrans, hidden_size+input_size+1)
     if plot_states:
         import matplotlib.pyplot as plt
         plt.plot(H)
         plt.show()
 
-    Who = lstsq_stable(H, labels[Ntrans:])
-    Wih, Whh, bh = esn
-    model = (Wih,Whh,bh,Who)
+    Who = esn.train(H, labels[Ntrans:])
+    # Wih, Whh, bh = esn
+    # model = (Wih,Whh,bh,Who)
     if plot_trained_outputs:
         import matplotlib.pyplot as plt
         plt.plot(labels[Ntrans:])
@@ -53,7 +52,8 @@ def sparse_esn_1d_train_pred(data,
 
     y0 = labels[-1]
     h0 = H[-1]
-    (y,h), (ys,hs) = predict_sparse_esn(model, y0, h0, Npred)
+    #(y,h), (ys,hs) = predict_sparse_esn(model, y0, h0, Npred)
+    (y,h), (ys,hs) = esn.predict(y0, h0, Npred)
     assert y.shape == (1,)
     assert ys.shape == (Npred, 1)
     assert h.shape == (hidden_size+input_size+1,)
@@ -70,18 +70,25 @@ def sparse_esn_1d_train_pred(data,
     mse = jnp.mean((ys - pred_labels)**2)
     assert mse < mse_threshold
 
+    with open(tmpdir / "esn.pkl", "wb") as fi:
+        joblib.dump(esn, fi)
+    pkl_esn = SparseESN.fromfile(tmpdir / "esn.pkl")
+    _, (pkl_ys,_) = pkl_esn.predict(y0, h0, Npred)
+    assert jnp.all(jnp.isclose(pkl_ys, ys))
 
-def test_sparse_esn_sines():
+
+
+def test_sparse_esn_sines(tmpdir):
     Ntrain = 2500
     Npred  = 500
     xs   = jnp.linspace(0,30*2*jnp.pi,Ntrain+Npred+1)
     data = jnp.sin(xs)
-    sparse_esn_1d_train_pred(data, Ntrain=Ntrain, Npred=Npred)
+    sparse_esn_1d_train_pred(tmpdir, data, Ntrain=Ntrain, Npred=Npred)
 
 
-def test_sparse_esn_mackey():
+def test_sparse_esn_mackey(tmpdir):
     data = mackey_sequence(N=3500)
-    sparse_esn_1d_train_pred(data,
+    sparse_esn_1d_train_pred(tmpdir, data,
                              hidden_size=2000,
                              Npred=200,
                              plot_prediction=False,
