@@ -1,11 +1,13 @@
-
-from scipy.fftpack import dctn, idctn
+import numpy as np
+from scipy.fftpack import dct, idct, dctn, idctn
 from scipy.linalg import lstsq
 
 from jax.config import config
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
-from jax.numpy import pi, exp
+from   jax.numpy import pi, exp
+
+na = np.newaxis
 
 # TODO: add axis
 def dct_from_fft(a):
@@ -13,11 +15,20 @@ def dct_from_fft(a):
     assert((n&1)==0)
 
     # abcdef -> ace fdb -- one step down in recursive FFT-definition to get from level 2n-fft to n-fft
-    c  = jnp.concatenate([a[::2],a[::-2]]) 
-    ks = jnp.arange(n)
-    A  = jnp.fft.fft(c) * 2 * jnp.exp(-1j*pi/(2*n)*ks)
+    c  = jnp.concatenate([a[::2],a[::-2]])
+    ks           = jnp.arange(n)
+    omega_shift  = 2*jnp.exp(-1j*pi/(2*n)*ks)       # Can be precalculated 
+    A  = jnp.fft.fft(c,axis=0) * omega_shift[:,na]
 
-    return A.real
+    return A.real.copy()
+
+def dctn_from_fft(a,axes=[0]):
+    c = a.copy()
+    for axis in axes:
+        c_reordered = dct_from_fft(c.swapaxes(axis,0))
+        c = c_reordered.swapaxes(axis,0)
+    return c
+        
 
 def sct_basis(nx, nk):
     """Basis for SCT (Slow Cosine Transform) which is a least-squares
