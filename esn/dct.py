@@ -1,7 +1,23 @@
-import numpy as np
+
 from scipy.fftpack import dctn, idctn
 from scipy.linalg import lstsq
 
+from jax.config import config
+config.update("jax_enable_x64", True)
+import jax.numpy as jnp
+from jax.numpy import pi, exp
+
+# TODO: add axis
+def dct_from_fft(a):
+    n = a.shape[0]
+    assert((n&1)==0)
+
+    # abcdef -> ace fdb -- one step down in recursive FFT-definition to get from level 2n-fft to n-fft
+    c  = jnp.concatenate([a[::2],a[::-2]]) 
+    ks = jnp.arange(n)
+    A  = jnp.fft.fft(c) * 2 * jnp.exp(-1j*pi/(2*n)*ks)
+
+    return A.real
 
 def sct_basis(nx, nk):
     """Basis for SCT (Slow Cosine Transform) which is a least-squares
@@ -9,7 +25,7 @@ def sct_basis(nx, nk):
     """
     xs = np.arange(nx)
     ks = np.arange(nk)
-    basis = 2 * np.cos(np.pi * (xs[:, None] + 0.5) * ks[None, :] / nx)
+    basis = 2 * jnp.cos(np.pi * (xs[:, None] + 0.5) * ks[None, :] / nx)
     return basis
 
 
@@ -17,13 +33,13 @@ def sct(fx, basis):
     """SCT (Slow Cosine Transform) which is a least-squares approximation to
     restricted DCT-III / Inverse DCT-II
     """
-    fk, _, _, _ = lstsq(basis, fx)
+    fk, _, _, _ = jnp.linalg.lstsq(basis, fx)
     return fk
 
 
 def isct(fk, basis):
     """Inverse SCT"""
-    fx = np.dot(basis, fk)
+    fx = jnp.dot(basis, fk)
     return fx
 
 
