@@ -1,3 +1,4 @@
+from functools import partial
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -8,8 +9,8 @@ from esn.dct import dct2
 
 
 """
-Creates a function `input_map` that can be called with a 2D input image.
-The `input_map` is composed of a number of `operation`s.
+Creates a callable object, that can be called with a 2D input image.
+The `InputMap` is composed of a number of `operation`s.
 Each `operation` again takes an image as input and outputs a vector.
 Possible operations include convolutions, random maps, resize, etc. For a full
 list of operations and their specifications see `make_operation`.
@@ -21,10 +22,16 @@ Returns:
     A function that can be called with a 2D array and that outputs
     a 1D array (concatenated output of each op).
 """
-def make_input_map(specs):
-    ops = [make_operation(spec) for spec in specs]
-    mapih = lambda img: jnp.concatenate([op(img) for op in ops], axis=0) 
-    return jax.jit(mapih)
+class InputMap:
+    def __init__(self, specs):
+        self.ops = [make_operation(s) for s in specs]
+
+    @partial(jax.jit, static_argnums=(0,))
+    def __call__(self, img):
+        return jnp.concatenate([op(img) for op in self.ops], axis=0) 
+
+    def device_put(self):
+        for op in self.ops: op.device_put()
 
 
 """
@@ -42,22 +49,23 @@ Possible operations specs are:
   * Random map:
       {"type":"random_weights", "input_size":10, "hidden_size":20}
 """
-def make_operation(spec):
+def make_operation(spec, data=None):
     optype = spec["type"]
     if optype == "pixels":
-        operation = make_pixels_op(spec)
+        op = PixelsOp(spec["size"])
     elif optype == "random_weights":
-        operation = make_random_weighs_op(spec)
+        op = RandWeightsOp(spec["input_size"], spec["hidden_size"])
     elif optype == "conv":
-        operation = make_conv_op(spec)
+        op = ConvOp(spec["size"], spec["kernel"])
     elif optype == "gradient":
-        operation = lambda img: jnp.concatenate(jnp.gradient(img)).reshape(-1)
+        op = GradientOp()
     elif optype == "dct":
-        operation = make_dct_op(spec)
+        op = DCTOp(spec["size"])
     else:
         raise ValueError(f"Unknown input map spec: {spec['type']}")
     #  TODO: normalize all of it? such that all outputs are between (-1,1)? # 
-    return jax.jit(lambda img: operation(img) * spec["factor"])
+    #_op = jax.jit(lambda img: op(img) * spec["factor"])
+    return ScaleOp(spec["factor"], op)
 
 
 def map_output_size(input_map_specs, input_shape):
@@ -83,43 +91,85 @@ def op_output_size(spec, input_shape):
     return size
 
 
-def make_pixels_op(spec):
-    return lambda img: image.resize(img, spec["size"], "bilinear").reshape(-1)
+class PixelsOp:
+    def __init__(self, size):
+        self.size = size
+    
+    @partial(jax.jit, static_argnums=(0,))
+    def __call__(self, img):
+        return image.resize(img, self.size, "bilinear").reshape(-1)
+
+    def device_put(self):
+        pass
 
 
-def make_random_weighs_op(spec):
-    isize, hsize = spec["input_size"], spec["hidden_size"]
-    Wih = np.random.uniform(-1, 1, (hsize, isize))
-    Wih = jax.device_put(Wih)
-    bh  = np.random.uniform(-1, 1, (hsize,))
-    bh  = jax.device_put(bh)
-    return lambda img: Wih.dot(img.reshape(-1)) + bh
+class RandWeightsOp:
+    def __init__(self, input_size, hidden_size):
+        self.isize = input_size
+        self.hsize = hidden_size
+        self.Wih = np.random.uniform(-1, 1, (self.hsize, self.isize))
+        self.bh  = np.random.uniform(-1, 1, (self.hsize,))
+        self.device_put()
+
+    @partial(jax.jit, static_argnums=(0,))
+    def __call__(self, img):
+        Wih, bh = self.Wih, self.bh
+        return Wih.dot(img.reshape(-1)) + bh
+
+    def device_put(self):
+        self.Wih = jax.device_put(self.Wih)
+        self.bh  = jax.device_put(self.bh)
 
 
-def make_conv_op(spec):
-    kernel = get_kernel(spec["size"], spec["kernel"])
-    kernel = jax.device_put(kernel[np.newaxis,np.newaxis,:,:])
-    def operation(img):
+class ScaleOp:
+    def __init__(self, factor, op):
+        self.a = factor
+        self.op = op
+
+    @partial(jax.jit, static_argnums=(0,))
+    def __call__(self, img):
+        return self.a * self.op(img)
+
+    def device_put(self):
+        self.op.device_put()
+
+
+class GradientOp:
+    @partial(jax.jit, static_argnums=(0,))
+    def __call__(self, img):
+        return jnp.concatenate(jnp.gradient(img)).reshape(-1)
+
+    def device_put(self):
+        pass
+
+
+class ConvOp:
+    def __init__(self, size, kernel):
+        self.size = size
+        self.name = kernel
+        self.kernel = get_kernel(size, kernel)[np.newaxis,np.newaxis,:,:]
+        self.device_put()
+
+    @partial(jax.jit, static_argnums=(0,))
+    def __call__(self, img):
         img = jnp.expand_dims(img, axis=(0,1))
-        out = lax.conv(img, kernel, (1,1), "VALID")
+        out = lax.conv(img, self.kernel, (1,1), "VALID")
         return out.reshape(-1)
-    return operation
+
+    def device_put(self):
+        self.kernel = jax.device_put(self.kernel)
 
 
-def make_dct_op(spec):
-    #@jax.custom_vjp
-    #def _dct2(jax_img, n, m):
-    #    x = np.asarray(jax_img)
-    #    x = dct2(x, n, m).reshape(-1)
-    #    return jax.device_put(x)
-    #def _dct2_rev(primals, tangents):
-    #    raise
-    #    return primals, tangents
-    #def _dct2_fwd(primals, tangens):
-    #    raise
-    #    return primals, tangents
-    #_dct2.defvjp(_dct2_fwd, _dct2_rev)
-    return lambda img: dct2(img, *spec["size"]).reshape(-1)
+class DCTOp():
+    def __init__(self, size):
+        self.size = size
+
+    @partial(jax.jit, static_argnums=(0,))
+    def __call__(self, img):
+        return dct2(img, *self.size).reshape(-1)
+
+    def device_put(self):
+        pass
 
 
 def get_kernel(kernel_shape, kernel_type):

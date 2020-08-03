@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 
-from esn.input_map import make_input_map
+from esn.input_map import InputMap
 from esn.jaxsparse import sp_dot
 
 
@@ -51,14 +51,14 @@ def sparse_esncell(input_map_specs, hidden_size,
 
     Arguments:
         input_map_specs: List of dicts that can be passed to
-          `esn.input_map.make_input_map`
+          `esn.input_map.InputMap`
         hidden_size: ESN hidden size
         spectral_radius: spectral radius of Whh
         density: density of Whh
     Returns:
         (Wih, Whh, bh)
     """
-    map_ih = make_input_map(input_map_specs)
+    map_ih = InputMap(input_map_specs)
     Whh = sparse_esn_reservoir(hidden_size, spectral_radius, density, False)
     Whh = Whh.tocoo()
     bh  = np.random.uniform(-1, 1, (hidden_size,))
