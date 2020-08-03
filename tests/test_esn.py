@@ -17,7 +17,10 @@ def test_sparse_esn_sines():
     hidden_size = 1500  # size of reservoir
     input_size  = 1
 
-    specs = [{"type":"random_weights", "input_size":input_size, "hidden_size":hidden_size}]
+    specs = [{"type":"random_weights",
+              "input_size":input_size,
+              "hidden_size":hidden_size,
+              "factor": 1.0}]
     esn = sparse_esncell(specs, hidden_size, spectral_radius=1.5, density=0.05)
 
     xs   = jnp.linspace(0,30*2*jnp.pi,Ntrain+Npred+1)

@@ -12,15 +12,16 @@ IMG_SHAPE = (5,5)
 
 RAND_SPEC = {"type":"random_weights",
             "input_size":IMG_SHAPE[0]*IMG_SHAPE[1],
-            "hidden_size":20}
+            "hidden_size":20,
+            "factor":0.5}
 
-PIXEL_SPEC = {"type":"pixels", "size":(5,5)}
+PIXEL_SPEC = {"type":"pixels", "size":(5,5), "factor": 0.5}
 
-CONV_SPEC = {"type":"conv", "size":(2,2), "kernel":"gauss"}
+CONV_SPEC = {"type":"conv", "size":(2,2), "kernel":"gauss", "factor": 0.5}
 
-GRAD_SPEC = {"type":"gradient"}
+GRAD_SPEC = {"type":"gradient", "factor": 0.5}
 
-DCT_SPEC  = {"type":"dct", "size":(3,3)}
+DCT_SPEC  = {"type":"dct", "size":(3,3), "factor": 0.5}
 
 SPECS = [RAND_SPEC, CONV_SPEC, PIXEL_SPEC, GRAD_SPEC, DCT_SPEC]
 
