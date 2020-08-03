@@ -103,7 +103,12 @@ def predict_sparse_esn(model, y0, h0, Npred):
       h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
       y_{n+1} = Who h_{n+1}
     """
-    aug_len = y0.shape[0]+1
+    if y0.ndim == 1:
+        aug_len = y0.shape[0] + 1
+    elif y0.ndim == 2:
+        aug_len = y0.shape[0] * y0.shape[1] + 1
+    else:
+        raise ValueError("'y0' must either be a vector or a matrix.")
 
     def _step(params, input, xs):
         (map_ih,(Whh,shape),bh,Who) = params
@@ -111,7 +116,7 @@ def predict_sparse_esn(model, y0, h0, Npred):
         h = h_augmented[aug_len:]
         h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(y) + bh)
         h = jnp.hstack([[1.], y.reshape(-1), h])
-        y = Who.dot(h)
+        y = Who.dot(h).reshape(y.shape)
         return ((y,h), (y,h))
 
     xs = jnp.arange(Npred)  # necessary for lax.scan

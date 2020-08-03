@@ -33,14 +33,14 @@ def sparse_esn_2d_train_pred(data, specs,
     H = sparse_generate_state_matrix(esn, inputs, Ntrans)
 
     # compute last layer
-    labels = labels.reshape(inputs.shape[0], -1)
+    labels = labels.reshape(labels.shape[0], -1)
     Who = lstsq_stable(H, labels[Ntrans:])
     model = esn + (Who,)
     
     # predict
-    y0, h0 = labels[-1], H[-1]
+    y0, h0 = labels[-1].reshape(img_shape), H[-1]
     (y,h), (ys,hs) = predict_sparse_esn(model, y0, h0, Npred)
-    ys = ys.reshape(*pred_labels.shape)
+    ys = ys.reshape(pred_labels.shape)
 
     if plot_prediction:
         import matplotlib.pyplot as plt
@@ -65,7 +65,7 @@ def test_sparse_esn_lissajous():
 
     sparse_esn_2d_train_pred(data, specs,
                              Npred=500,
-                             plot_prediction=True,
+                             plot_prediction=False,
                              mse_threshold=1e-8)
 
 
@@ -90,7 +90,7 @@ def test_sparse_esn_chaotic():
     ]
     sparse_esn_2d_train_pred(data, specs,
                              Npred=200,
-                             plot_prediction=True,
+                             plot_prediction=False,
                              mse_threshold=1e-4)
 
 
