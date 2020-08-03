@@ -15,7 +15,7 @@ RAND_SPEC = {"type":"random_weights",
             "hidden_size":20,
             "factor":0.5}
 
-PIXEL_SPEC = {"type":"pixels", "size":(5,5), "factor": 0.5}
+PIXEL_SPEC = {"type":"pixels", "size":(3,3), "factor": 0.5}
 
 CONV_SPEC = {"type":"conv", "size":(2,2), "kernel":"gauss", "factor": 0.5}
 

@@ -2,7 +2,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from jax import lax
-#from jax import image TODO: why does this not work???
+from jax import image
 
 from esn.dct import dct2
 
@@ -23,7 +23,8 @@ Returns:
 """
 def make_input_map(specs):
     ops = [make_operation(spec) for spec in specs]
-    return lambda img: jnp.concatenate([op(img) for op in ops], axis=0)
+    mapih = lambda img: jnp.concatenate([op(img) for op in ops], axis=0) 
+    return jax.jit(mapih)
 
 
 """
@@ -83,8 +84,7 @@ def op_output_size(spec, input_shape):
 
 
 def make_pixels_op(spec):
-    #return lambda img: image.resize(img, spec["size"], "bilinear").reshape(-1)
-    return lambda img: img.reshape(-1)
+    return lambda img: image.resize(img, spec["size"], "bilinear").reshape(-1)
 
 
 def make_random_weighs_op(spec):
