@@ -15,7 +15,7 @@ def sparse_esn_1d_train_pred(data,
                              Ntrain=2500,       # Number of steps to train on
                              Npred=500,         # Number of steps for free-running prediction
                              hidden_size=1500,  # size of reservoir
-                             mse_threshold=1e-5,
+                             mse_threshold=1e-10,
                              plot_states=False,
                              plot_trained_outputs=False,
                              plot_prediction=False):
@@ -67,7 +67,7 @@ def sparse_esn_1d_train_pred(data,
         plt.legend()
         plt.show()
 
-    mse = jnp.mean(jnp.abs(ys - pred_labels))
+    mse = jnp.mean((ys - pred_labels)**2)
     assert mse < mse_threshold
 
 
@@ -85,7 +85,7 @@ def test_sparse_esn_mackey():
                              hidden_size=2000,
                              Npred=200,
                              plot_prediction=False,
-                             mse_threshold=1e-2)
+                             mse_threshold=1e-4)
 
 if __name__ == "__main__":
     test_sparse_esn_mackey()
