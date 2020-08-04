@@ -93,6 +93,10 @@ class PixelsOp(Operation):
     def output_size(self, input_shape):
         return self.size[0] * self.size[1]
 
+    def output_shape(self, input_shape):
+        return (self.size[0], self.size[1])
+
+
 
 class RandWeightsOp(Operation):
     def __init__(self, input_size, hidden_size):
@@ -114,6 +118,9 @@ class RandWeightsOp(Operation):
     def output_size(self, input_shape):
         return self.hsize
 
+    def output_shape(self, input_shape):
+        raise NotImplementedError
+
 
 class ScaleOp(Operation):
     def __init__(self, factor, op):
@@ -130,6 +137,9 @@ class ScaleOp(Operation):
     def output_size(self, input_shape):
         return self.op.output_size(input_shape)
 
+    def output_shape(self, input_shape):
+        return self.op.output_shape(input_shape)
+
 
 class GradientOp(Operation):
     @partial(jax.jit, static_argnums=(0,))
@@ -138,6 +148,9 @@ class GradientOp(Operation):
 
     def output_size(self, input_shape):
         return input_shape[0] * input_shape[1] * 2
+
+    def output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1] * 2)
 
 
 class ConvOp(Operation):
@@ -157,8 +170,12 @@ class ConvOp(Operation):
         self.kernel = jax.device_put(self.kernel)
 
     def output_size(self, input_shape):
+        s = self.output_shape(input_shape)
+        return s[0] * s[1]
+
+    def output_shape(self, input_shape):
         (m,n) = self.size
-        return (input_shape[0]-m+1) * (input_shape[1]-n+1)
+        return (input_shape[0]-m+1, input_shape[1]-n+1)
 
 
 class DCTOp(Operation):
@@ -171,6 +188,9 @@ class DCTOp(Operation):
 
     def output_size(self, input_shape):
         return self.size[0] * self.size[1]
+
+    def output_shape(self, input_shape):
+        return self.size
 
 
 def get_kernel(kernel_shape, kernel_type):
