@@ -8,10 +8,11 @@ setup(name="esn",
     author="Niklas Heim",
     packages=find_packages(),
     install_requires=[
-        "numpy",
-        "scipy",
         "jax",
         "jaxlib"
+        "joblib",
+        "numpy",
+        "scipy",
     ],
     extras_require={
         "test":["pytest","pytest-cov"]
