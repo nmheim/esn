@@ -9,7 +9,7 @@ setup(name="esn",
     packages=find_packages(),
     install_requires=[
         "jax",
-        "jaxlib"
+        "jaxlib",
         "joblib",
         "numpy",
         "scipy",
