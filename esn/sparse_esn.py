@@ -115,18 +115,29 @@ class SparseESN:
         ((y,h), (ys,hs)) = lax.scan(_step, (y0,h0), xs)
         return ((y,h), (ys,hs))
 
-    def generate_state_matrix(self, inputs, Ntrans):
-        Ntrain = inputs.shape[0]
+    def generate_state_matrix(self, imgs, Ntrans):
+        Ntrain = imgs.shape[0]
                
         h0 = jnp.zeros(self.hidden_size)
 
-        (_,H) = self.apply(inputs, h0)
+        (_,H) = self.apply(imgs, h0)
         H = jnp.vstack(H)
 
         H0 = H[Ntrans:]
-        I0 = inputs[Ntrans:].reshape(Ntrain-Ntrans,-1)
+        I0 = imgs[Ntrans:].reshape(Ntrain-Ntrans,-1)
         ones = jnp.ones((Ntrain-Ntrans,1))
         return jnp.concatenate([ones,I0,H0], axis=1)
+
+    def warmup_predict(self, imgs, Npred):
+        """
+        Given a trained ESN and a number input images 'imgs', predicts 'Npred'
+        frames after the last frame of 'imgs'. The input images are used to
+        create the inital state 'h0' for the prediction (warmup).
+        """
+        H = self.generate_state_matrix(imgs, 0)
+        h0 = H[-2]
+        y0 = imgs[-1]
+        return self.predict(y0, h0, Npred)
 
 
 def sparse_esn_reservoir(size, spectral_radius, density, symmetric):

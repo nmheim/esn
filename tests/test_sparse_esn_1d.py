@@ -61,16 +61,22 @@ def sparse_esn_1d_train_pred(tmpdir, data,
     assert h.shape == (hidden_size+input_size+1,)
     assert hs.shape == (Npred, hidden_size+input_size+1)
 
+    _, (wys,_) = esn.warmup_predict(labels[-Ntrans:], Npred)
+
     if plot_prediction:
         import matplotlib.pyplot as plt
-        plt.plot(ys, label="Truth")
-        plt.plot(pred_labels.reshape(-1), label="Prediction")
+        plt.plot(ys, label="Prediction")
+        plt.plot(pred_labels.reshape(-1), label="Truth")
+        plt.plot(wys, label="Warmup Prediction")
         plt.title("500 step prediction vs. truth")
         plt.legend()
         plt.show()
 
     mse = jnp.mean((ys - pred_labels)**2)
+    w_mse = jnp.mean((wys - pred_labels)**2)
     assert mse < mse_threshold
+    assert w_mse < mse_threshold
+    assert jnp.isclose(mse, w_mse)
 
     with open(tmpdir / "esn.pkl", "wb") as fi:
         joblib.dump(esn, fi)
@@ -85,7 +91,8 @@ def test_sparse_esn_sines(tmpdir):
     Npred  = 500
     xs   = jnp.linspace(0,30*2*jnp.pi,Ntrain+Npred+1)
     data = jnp.sin(xs)
-    sparse_esn_1d_train_pred(tmpdir, data, Ntrain=Ntrain, Npred=Npred)
+    sparse_esn_1d_train_pred(tmpdir, data,
+        Ntrain=Ntrain, Npred=Npred, plot_prediction=False)
 
 
 def test_sparse_esn_mackey(tmpdir):

@@ -33,13 +33,14 @@ def sparse_esn_2d_train_pred(tmpdir, data, specs,
     H = esn.generate_state_matrix(inputs, Ntrans)
 
     # compute last layer
-    labels = labels.reshape(labels.shape[0], -1)
-    esn.train(H, labels[Ntrans:])
+    _labels = labels.reshape(labels.shape[0], -1)
+    esn.train(H, _labels[Ntrans:])
     
     # predict
-    y0, h0 = labels[-1].reshape(img_shape), H[-1]
+    y0, h0 = labels[-1], H[-1]
     (y,h), (ys,hs) = esn.predict(y0, h0, Npred)
-    ys = ys.reshape(pred_labels.shape)
+    # predict with warump of Ntrain frames
+    _, (wys,_) = esn.warmup_predict(labels[-Ntrans:], Npred)
 
     if plot_prediction:
         import matplotlib.pyplot as plt
@@ -51,8 +52,10 @@ def sparse_esn_2d_train_pred(tmpdir, data, specs,
         plt.show()
 
     mse = jnp.mean((ys[-1] - pred_labels[-1])**2)
-    print(mse)
+    w_mse = jnp.mean((wys[-1] - pred_labels[-1])**2)
     assert mse < mse_threshold
+    assert w_mse < mse_threshold
+    assert jnp.isclose(mse, w_mse)
 
     with open(tmpdir / "esn.pkl", "wb") as fi:
         joblib.dump(esn, fi)
