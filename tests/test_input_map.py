@@ -1,11 +1,11 @@
+import joblib
 import numpy as np
 import jax
 import jax.numpy as jnp
 from jax.config import config
 config.update("jax_enable_x64", True)
 
-from esn.input_map import (make_operation, make_input_map, op_output_size,
-                           map_output_size)
+from esn.input_map import (make_operation, InputMap)
 
 
 IMG_SHAPE = (6,6)
@@ -25,43 +25,45 @@ DCT_SPEC  = {"type":"dct", "size":(3,3), "factor": 0.5}
 
 SPECS = [RAND_SPEC, CONV_SPEC, PIXEL_SPEC, GRAD_SPEC, DCT_SPEC]
 
-def test_rand_operation():
-    spec = RAND_SPEC
+def _testop(spec, tmpdir):
     img = jax.device_put(np.random.uniform(size=IMG_SHAPE))
     op = make_operation(spec)
-    assert op(img).shape == (op_output_size(spec, IMG_SHAPE),)
-    # test that "random_weights" also works for vectors
+    assert op(img).shape == (op.output_size(IMG_SHAPE),)
+
+    with open(tmpdir / "op.pkl", "wb") as fi:
+        joblib.dump(op, fi) 
+    pkl_op = type(op).fromfile(tmpdir / "op.pkl")
+    assert type(pkl_op(img)) == type(img)
+    return op
+
+def test_rand_operation(tmpdir):
+    op = _testop(RAND_SPEC, tmpdir)
+    img = jax.device_put(np.random.uniform(size=IMG_SHAPE))
     vec = img.reshape(-1)
-    assert op(vec).shape == (op_output_size(RAND_SPEC, IMG_SHAPE),)
+    assert op(vec).shape == (op.output_size(IMG_SHAPE),)
 
-def test_pixel_operation():
-    spec = PIXEL_SPEC
-    img = jax.device_put(np.random.uniform(size=IMG_SHAPE))
-    op = make_operation(spec)
-    assert op(img).shape == (op_output_size(spec, IMG_SHAPE),)
+def test_pixel_operation(tmpdir):
+    op = _testop(PIXEL_SPEC, tmpdir)
 
-def test_conv_operation():
-    spec = CONV_SPEC
-    img = jax.device_put(np.random.uniform(size=IMG_SHAPE))
-    op = make_operation(spec)
-    assert op(img).shape == (op_output_size(spec, IMG_SHAPE),)
+def test_conv_operation(tmpdir):
+    op = _testop(CONV_SPEC, tmpdir)
 
-def test_grad_operation():
-    spec = GRAD_SPEC
-    img = jax.device_put(np.random.uniform(size=IMG_SHAPE))
-    op = make_operation(spec)
-    assert op(img).shape == (op_output_size(spec, IMG_SHAPE),)
+def test_grad_operation(tmpdir):
+    op = _testop(GRAD_SPEC, tmpdir)
 
-def test_dct_operation():
-    spec = DCT_SPEC
-    img = jax.device_put(np.random.uniform(size=IMG_SHAPE))
-    op = make_operation(spec)
-    assert op(img).shape == (op_output_size(spec, IMG_SHAPE),)
+def test_dct_operation(tmpdir):
+    op = _testop(DCT_SPEC, tmpdir)
 
-def test_input_map():
+def test_input_map(tmpdir):
     img = jax.device_put(np.random.uniform(size=(IMG_SHAPE)))
-    map_ih = make_input_map(SPECS)
-    assert map_ih(img).shape == (map_output_size(SPECS, IMG_SHAPE),)
+    op = InputMap(SPECS)
+    assert op(img).shape == (op.output_size(IMG_SHAPE),)
+
+    with open(tmpdir / "op.pkl", "wb") as fi:
+        joblib.dump(op, fi) 
+    pkl_op = InputMap.fromfile(tmpdir / "op.pkl")
+    assert type(pkl_op(img)) == type(img)
+
 
 if __name__ == "__main__":
     test_make_operation()
