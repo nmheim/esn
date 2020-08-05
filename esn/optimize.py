@@ -22,12 +22,12 @@ def lstsq_stable(H, labels):
 
 
 #@jax.jit  # TODO: this does not work yet because of dynamic shapes due to 'n'
-def imed_lstsq_stable(states, inputs, labels):
+def imed_lstsq_stable(states, inputs, labels, sigma):
     flat_inputs = inputs.reshape(inputs.shape[0], -1)
     flat_labels = labels.reshape(inputs.shape[0], -1)
 
     # prep IMED
-    G = imed_matrix(inputs.shape[1:])
+    G = imed_matrix(inputs.shape[1:], sigma=sigma)
     (w,V) = jnp.linalg.eigh(G)
     s = jnp.sqrt(w)
     G12 = jnp.dot(V, s[:,None]*V.T)

@@ -79,7 +79,7 @@ def train(esncell, states, labels):
     return esncell + (Who,)
 
 
-def train_imed(esncell, states, inputs, labels):
+def train_imed(esncell, states, inputs, labels, sigma=1.):
     """Compute the output matrix via least squares in IMED space and add it
     to the esncell tuple to create a model tuple.
 
@@ -91,7 +91,7 @@ def train_imed(esncell, states, inputs, labels):
     Returns:
         (mapih, Whh, bh, Who)
     """
-    Who = imed_lstsq_stable(states, inputs, labels)
+    Who = imed_lstsq_stable(states, inputs, labels, sigma)
     return esncell + (Who,)
 
 
