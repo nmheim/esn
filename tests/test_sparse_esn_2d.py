@@ -5,9 +5,9 @@ import jax.numpy as jnp
 # config.update("jax_enable_x64", True)
 
 from esn.input_map import InputMap
-from esn.sparse_esn import SparseESN
 from esn.utils import split_train_label_pred
 from esn.toydata import gauss2d_sequence, mackey2d_sequence
+import esn.sparse_esn as se
 
 
 def sparse_esn_2d_train_pred(tmpdir, data, specs,
@@ -27,22 +27,22 @@ def sparse_esn_2d_train_pred(tmpdir, data, specs,
     # build esn
     map_ih = InputMap(specs)
     hidden_size = map_ih.output_size(img_shape)
-    esn = SparseESN(map_ih, hidden_size, spectral_radius=1.5, density=0.05)
+    esn = se.esncell(map_ih, hidden_size, spectral_radius=1.5, density=0.05)
  
     # compute training states
-    H = esn.generate_state_matrix(inputs, Ntrans)
+    H = se.augmented_state_matrix(esn, inputs, Ntrans)
 
     # compute last layer without imed
     _labels = labels.reshape(inputs.shape[0], -1)
-    esn.train(H, _labels[Ntrans:])
+    model = se.train(esn, H, _labels[Ntrans:])
     # and with imed
-    esn.train_imed(H, inputs[Ntrans:], labels[Ntrans:])
+    model = se.train_imed(esn, H, inputs[Ntrans:], labels[Ntrans:])
     
     # predict
     y0, h0 = labels[-1], H[-1]
-    (y,h), (ys,hs) = esn.predict(y0, h0, Npred)
+    (y,h), (ys,hs) = se.predict(model, y0, h0, Npred)
     # predict with warump of Ntrain frames
-    _, (wys,_) = esn.warmup_predict(labels[-Ntrans:], Npred)
+    _, (wys,_) = se.warmup_predict(model, labels[-Ntrans:], Npred)
 
     if plot_prediction:
         import matplotlib.pyplot as plt
@@ -60,9 +60,9 @@ def sparse_esn_2d_train_pred(tmpdir, data, specs,
     assert jnp.isclose(mse, w_mse)
 
     with open(tmpdir / "esn.pkl", "wb") as fi:
-        joblib.dump(esn, fi)
-    pkl_esn = SparseESN.fromfile(tmpdir / "esn.pkl")
-    _, (pkl_ys,_) = pkl_esn.predict(y0, h0, Npred)
+        joblib.dump(model, fi)
+    pkl_model = se.load_model(tmpdir / "esn.pkl")
+    _, (pkl_ys,_) = se.predict(pkl_model, y0, h0, Npred)
     assert jnp.all(jnp.isclose(pkl_ys, ys))
 
 

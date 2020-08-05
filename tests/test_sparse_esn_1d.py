@@ -4,9 +4,9 @@ from jax.config import config
 config.update("jax_enable_x64", True)
 
 from esn.input_map import InputMap
-from esn.sparse_esn import SparseESN
 from esn.utils import split_train_label_pred
 from esn.toydata import mackey_sequence
+import esn.sparse_esn as se
 
 
 def sparse_esn_1d_train_pred(tmpdir, data,
@@ -30,21 +30,19 @@ def sparse_esn_1d_train_pred(tmpdir, data,
               "factor": 1.0}]
     map_ih = InputMap(specs)
     hidden_size = map_ih.output_size((input_size,))
-    esn = SparseESN(map_ih, hidden_size, spectral_radius=1.5, density=0.05)
+    esn = se.esncell(map_ih, hidden_size, spectral_radius=1.5, density=0.05)
 
     data = data.reshape(-1, 1)
     inputs, labels, pred_labels = split_train_label_pred(data,Ntrain,Npred)
 
-    H = esn.generate_state_matrix(inputs, Ntrans)
+    H = se.augmented_state_matrix(esn, inputs, Ntrans)
     assert H.shape == (Ntrain-Ntrans, hidden_size+input_size+1)
     if plot_states:
         import matplotlib.pyplot as plt
         plt.plot(H)
         plt.show()
 
-    Who = esn.train(H, labels[Ntrans:])
-    # Wih, Whh, bh = esn
-    # model = (Wih,Whh,bh,Who)
+    model = se.train(esn, H, labels[Ntrans:])
     if plot_trained_outputs:
         import matplotlib.pyplot as plt
         plt.plot(labels[Ntrans:])
@@ -54,14 +52,13 @@ def sparse_esn_1d_train_pred(tmpdir, data,
 
     y0 = labels[-1]
     h0 = H[-1]
-    #(y,h), (ys,hs) = predict_sparse_esn(model, y0, h0, Npred)
-    (y,h), (ys,hs) = esn.predict(y0, h0, Npred)
+    (y,h), (ys,hs) = se.predict(model, y0, h0, Npred)
     assert y.shape == (1,)
     assert ys.shape == (Npred, 1)
     assert h.shape == (hidden_size+input_size+1,)
     assert hs.shape == (Npred, hidden_size+input_size+1)
 
-    _, (wys,_) = esn.warmup_predict(labels[-Ntrans:], Npred)
+    _, (wys,_) = se.warmup_predict(model, labels[-Ntrans:], Npred)
 
     if plot_prediction:
         import matplotlib.pyplot as plt
@@ -79,9 +76,9 @@ def sparse_esn_1d_train_pred(tmpdir, data,
     assert jnp.isclose(mse, w_mse)
 
     with open(tmpdir / "esn.pkl", "wb") as fi:
-        joblib.dump(esn, fi)
-    pkl_esn = SparseESN.fromfile(tmpdir / "esn.pkl")
-    _, (pkl_ys,_) = pkl_esn.predict(y0, h0, Npred)
+        joblib.dump(model, fi)
+    pkl_model = se.load_model(tmpdir / "esn.pkl")
+    _, (pkl_ys,_) = se.predict(pkl_model, y0, h0, Npred)
     assert jnp.all(jnp.isclose(pkl_ys, ys))
 
 
