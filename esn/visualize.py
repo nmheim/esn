@@ -85,9 +85,7 @@ def plot_input_map(esn, img, h0):
     im = ax[-1].imshow(vec_to_rect(h1))
     ax[-1].set_title("tanh(Whh * h0 + map_ih(img) + bh)")
     plt.colorbar(im, ax=ax[-1])
-
-    plt.imshow(img)
-    plt.show()
+    return fig, ax
 
 if __name__ == "__main__":
     import jax

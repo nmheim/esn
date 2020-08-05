@@ -147,10 +147,11 @@ class GradientOp(Operation):
         return jnp.concatenate(jnp.gradient(img)).reshape(-1)
 
     def output_size(self, input_shape):
-        return input_shape[0] * input_shape[1] * 2
+        s = self.output_shape(input_shape)
+        return s[0] * s[1]
 
     def output_shape(self, input_shape):
-        return (input_shape[0], input_shape[1] * 2)
+        return (input_shape[0]*2, input_shape[1])
 
 
 class ConvOp(Operation):
