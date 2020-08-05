@@ -32,9 +32,11 @@ def sparse_esn_2d_train_pred(tmpdir, data, specs,
     # compute training states
     H = esn.generate_state_matrix(inputs, Ntrans)
 
-    # compute last layer
-    _labels = labels.reshape(labels.shape[0], -1)
+    # compute last layer without imed
+    _labels = labels.reshape(inputs.shape[0], -1)
     esn.train(H, _labels[Ntrans:])
+    # and with imed
+    esn.train_imed(H, inputs[Ntrans:], labels[Ntrans:])
     
     # predict
     y0, h0 = labels[-1], H[-1]

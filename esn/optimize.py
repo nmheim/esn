@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 
+#@jax.jit
 def lstsq_stable(H, labels):
     if labels.ndim != 2:
         raise ValueError("Labels must have shape (time, features)")

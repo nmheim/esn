@@ -10,6 +10,7 @@ from jax import lax
 from esn.input_map import InputMap
 from esn.jaxsparse import sp_dot
 from esn.optimize import lstsq_stable
+from esn.imed import imed_matrix
 from esn.utils import _fromfile
 
 
@@ -82,6 +83,28 @@ class SparseESN:
     def train(self, states, labels):
         """Compute the output matrix via least squares."""
         self.Who = lstsq_stable(states, labels)
+        return self.Who
+
+    def train_imed(self, states, imgs, labels):
+        flat_inputs = imgs.reshape(imgs.shape[0], -1)
+        flat_labels = labels.reshape(imgs.shape[0], -1)
+
+        # prep IMED
+        G = imed_matrix(imgs.shape[1:])
+        (w,V) = jnp.linalg.eigh(G)
+        s = jnp.sqrt(w)
+        G12 = jnp.dot(V, s[:,None]*V.T)
+
+        # transform imgs / labels
+        flat_inputs = jnp.matmul(G12, flat_inputs[:,:,None])[:,:,0]
+        flat_labels = jnp.matmul(G12, flat_labels[:,:,None])[:,:,0]
+
+        # compute Who
+        Who  = lstsq_stable(states, flat_labels)
+        s    = 1/jnp.sqrt(w)
+        iG12 = jnp.dot(V,s[:,None]*V.T)
+        Who  = jnp.dot(iG12, Who)
+        self.Who = Who
         return self.Who
 
     @partial(jax.jit, static_argnums=(0,3))
