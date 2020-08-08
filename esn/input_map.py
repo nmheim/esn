@@ -72,6 +72,8 @@ def make_operation(spec, data=None):
         op = ConvOp(spec["size"], spec["kernel"])
     elif optype == "gradient":
         op = GradientOp()
+    elif optype == "vorticity":
+        op = VorticityOp()        
     elif optype == "dct":
         op = DCTOp(spec["size"])
     else:
@@ -153,6 +155,22 @@ class GradientOp(Operation):
     def output_shape(self, input_shape):
         return (input_shape[0]*2, input_shape[1])
 
+class VorticityOp(Operation):
+    @partial(jax.jit, static_argnums=(0,))
+    def __call__(self, img):
+        u, v = jnp.gradient(img)
+        ux, uy = jnp.gradient(u)
+        vx, vy = jnp.gradient(v)
+        vorticity = ux - vy
+        return vorticity.reshape(-1)
+
+    def output_size(self, input_shape):
+        s = self.output_shape(input_shape)
+        return s[0] * s[1]
+
+    def output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1])
+    
 
 class ConvOp(Operation):
     def __init__(self, size, kernel):
