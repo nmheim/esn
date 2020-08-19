@@ -4,13 +4,13 @@ from esn.imed import imed_matrix
 
 
 #@jax.jit  # TODO: this does not work yet because of dynamic shapes due to 'n'
-def lstsq_stable(H, labels):
+def lstsq_stable(H, labels, thresh=1e-5):
     if labels.ndim != 2:
         raise ValueError("Labels must have shape (time, features)")
 
     U, s, Vh = jax.scipy.linalg.svd(H.T)
     scale = s[0]
-    n = len(s[jnp.abs(s / scale) > 1e-5])  # Ensure condition number less than 100.000
+    n = len(s[jnp.abs(s / scale) > thresh])  # Ensure condition number less than 1/thresh
     
     L = labels.T
 
