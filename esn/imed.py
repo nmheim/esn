@@ -19,10 +19,10 @@ def imed_matrix(img_shape, sigma=1.):
 
 
 @jax.jit
-def imed(a_imgs, b_imgs, G=None):
+def imed(a_imgs, b_imgs, G=None, sigma=1.):
     assert a_imgs.shape == b_imgs.shape
     a_seq = a_imgs.reshape([a_imgs.shape[0], -1])
     b_seq = b_imgs.reshape([b_imgs.shape[0], -1])
     if G is None:
-        G = metric_matrix(a_imgs.shape[1:])
+        G = imed_matrix(a_imgs.shape[1:], sigma=sigma)
     return jnp.array([(x - y).dot(G.dot(x - y)) for x, y in zip(a_seq, b_seq)])
