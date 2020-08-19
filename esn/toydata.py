@@ -21,6 +21,25 @@ def gauss2d_sequence(centers=None, sigma=0.5, size=[20, 20], borders=[[-2, 2], [
     return np.exp(-gauss)
 
 
+def square_sequence(toplefts=None, square_size=(3,3), size=(20,20), borders=[[-2, 2], [-2, 2]]):
+    """Creates a moving gaussian blob on grid with `size`"""
+    if toplefts is None:
+        t = np.arange(0, 500 * np.pi, 0.1)
+        xa = (size[1]-square_size[1]) / 2
+        x  = xa * np.sin(t) + xa
+        ya = (size[0]-square_size[0]) / 2
+        y  = ya * np.cos(0.25 * t) + ya
+        toplefts = np.rint([y, x]).T.astype(int)
+
+    square = np.ones(square_size)
+    seq    = np.zeros((toplefts.shape[0],) + size)
+    sx, sy = square_size
+
+    for (i,(cy,cx)) in enumerate(toplefts):
+        seq[i, cy:cy+sy, cx:cx+sx] += square
+    return seq
+
+
 def mackey2d_sequence(sigma=0.5, size=[20,20], borders=[[-2, 2], [-2, 2]]):
     t = np.arange(0, 500 * np.pi, 0.1)
     x = normalize(mackey_sequence(N=t.shape[0])) * 2 - 1
