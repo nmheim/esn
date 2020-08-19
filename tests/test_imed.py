@@ -57,5 +57,21 @@ def test_imed():
 
     assert np.allclose(_imed, conv_diff)
 
+
+# def test_imed_sequence():
+#     import esn.toydata as td
+#     imgs = td.gauss2d_sequence()[:300]
+#     imgs = td.square_sequence()[:300]
+#     img0 = np.tile(imgs[0], (imgs.shape[0], 1, 1))
+# 
+#     il = imed(imgs, img0, sigma=2.)
+#     ml = ((imgs - img0)**2).mean(axis=-1).mean(axis=-1)
+# 
+#     import matplotlib.pyplot as plt
+#     plt.plot(il/il.max(), label="imed")
+#     plt.plot(ml/ml.max(), label="mse")
+#     plt.legend()
+#     plt.show()
+
 if __name__ == "__main__":
-    test_imed()
+    test_imed_sequence()
