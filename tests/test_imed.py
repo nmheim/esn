@@ -20,14 +20,15 @@ def gauss_kernel(kernel_shape, sigma=None):
 def test_imed():
     np.random.seed(0)
 
-    img1 = np.zeros([15,15])
+    shape = [15,15]
+    img1 = np.zeros(shape)
     img1[7:12,7:12] = 1.
-    img2 = np.zeros([15,15])
+    img2 = np.zeros(shape)
     img2[8:13,8:13] = 1.
     diff = img1 - img2
     sigma = 2.
 
-    kernel = gauss_kernel([15,15], sigma=sigma)
+    kernel = gauss_kernel(shape, sigma=sigma)
     conv_diff = convolve2d(diff, kernel, mode="same")
 
     G = imed_matrix(diff.shape, sigma=sigma)
@@ -50,12 +51,22 @@ def test_imed():
     # ax2[3].set_title("G_diff")
     # plt.show()
 
+    print(conv_diff - G_diff)
     assert np.allclose(conv_diff, G_diff, atol=1e-4)
 
     _imed = imed(img1[None,:,:], img2[None,:,:], G=G, sigma=sigma)
     conv_diff = (diff * conv_diff).sum()
 
+    print(conv_diff - _imed)
     assert np.allclose(_imed, conv_diff)
+
+def test_imed_positive_definite():
+    # TODO: fails for s = 3.
+    for s in [0.5, 1., 2.]:
+        G = imed_matrix((30,30), sigma=s)
+        eigs = np.linalg.eigvals(G)
+        neg_eigs = eigs[eigs<0]
+        assert len(neg_eigs) == 0
 
 
 # def test_imed_sequence():

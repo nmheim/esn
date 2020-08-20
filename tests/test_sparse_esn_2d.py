@@ -36,7 +36,7 @@ def sparse_esn_2d_train_pred(tmpdir, data, specs,
     _labels = labels.reshape(inputs.shape[0], -1)
     model = se.train(esn, H, _labels[Ntrans:])
     # and with imed
-    model = se.train_imed(esn, H, inputs[Ntrans:], labels[Ntrans:])
+    model = se.train_imed(esn, H, inputs[Ntrans:], labels[Ntrans:], sigma=2.)
     
     # predict
     y0, h0 = labels[-1], H[-1]
