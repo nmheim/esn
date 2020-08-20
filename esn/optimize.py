@@ -10,7 +10,7 @@ def lstsq_stable(H, labels, thresh=1e-5):
 
     U, s, Vh = jax.scipy.linalg.svd(H.T)
     scale = s[0]
-    n = len(s[jnp.abs(s / scale) > thresh])  # Ensure condition number less than 1/thresh
+    n = jnp.sum(jnp.abs(s/scale) > thresh)  # Ensure condition number less than 1/thresh
     
     L = labels.T
 
@@ -29,8 +29,14 @@ def imed_lstsq_stable(states, inputs, labels, sigma):
     # prep IMED
     G = imed_matrix(inputs.shape[1:], sigma=sigma)
     (w,V) = jnp.linalg.eigh(G)
+
+    #thresh = 0
+    #n = jnp.sum(jnp.abs(w) < thresh)
+    #s = jnp.sqrt(w[n:])
+    #V = V[n:,:]
     s = jnp.sqrt(w)
-    G12 = jnp.dot(V, s[:,None]*V.T)
+
+    G12 = jnp.dot(V.T, s[:,None]*V)
 
     # transform inputs / labels
     flat_inputs = jnp.matmul(G12, flat_inputs[:,:,None])[:,:,0]
@@ -38,7 +44,7 @@ def imed_lstsq_stable(states, inputs, labels, sigma):
 
     # compute Who
     Who  = lstsq_stable(states, flat_labels)
-    s    = 1/jnp.sqrt(w)
-    iG12 = jnp.dot(V,s[:,None]*V.T)
+    s    = 1/s
+    iG12 = jnp.dot(V.T,s[:,None]*V)
     Who  = jnp.dot(iG12, Who)
     return Who
