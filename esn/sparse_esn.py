@@ -199,13 +199,26 @@ def sparse_esn_reservoir(size, spectral_radius, density, symmetric):
     return model
 
 
-def device_put(model):
-    (mapih, (Whh,shape), bh, Who) = model
+def device_put(model_or_cell):
+    if len(model_or_cell) == 3:
+        moc = _device_put_cell(model_or_cell)
+    elif len(model_or_cell) == 4:
+        moc = _device_put_model(model_or_cell)
+    return moc
+
+
+def _device_put_cell(cell):
+    (mapih, (Whh,shape), bh) = cell
     mapih.device_put()
     Whh = jax.device_put(Whh)
     bh  = jax.device_put(bh)
-    Who = jax.device_put(Who)
-    return (mapih, (Whh,shape), bh, Who)
+    return (mapih, (Whh,shape), bh)
+
+
+def _device_put_model(model):
+    cell = model[:3]
+    Who  = jax.device_put(model[3])
+    return _device_put_cell(cell) + (Who,)
 
 
 def load_model(filename):
