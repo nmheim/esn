@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax.config import config
 config.update("jax_enable_x64", True)
 
-from esn.input_map import (make_operation, InputMap)
+from esn.input_map import make_operation, rescale, InputMap, ScaleOp, PixelsOp
 
 
 IMG_SHAPE = (6,6)
@@ -54,15 +54,38 @@ def test_grad_operation(tmpdir):
 def test_dct_operation(tmpdir):
     op = _testop(DCT_SPEC, tmpdir)
 
+def test_scale_operation():
+    img = jax.device_put(np.random.uniform(size=IMG_SHAPE))
+    op = PixelsOp(PIXEL_SPEC["size"])
+    sp = ScaleOp(2, op)
+
+    o1 = np.array(op(img))
+    o2 = np.array(sp(img))
+    assert np.allclose(o1*2, o2)
+
+    sp = ScaleOp(4, op)
+    o2 = np.array(sp(img))
+    assert np.allclose(o1*4, o2)
+
 def test_input_map(tmpdir):
     img = jax.device_put(np.random.uniform(size=(IMG_SHAPE)))
-    op = InputMap(SPECS)
-    assert op(img).shape == (op.output_size(IMG_SHAPE),)
+    mapih = InputMap(SPECS)
+    out = mapih(img)
 
-    with open(tmpdir / "op.pkl", "wb") as fi:
-        joblib.dump(op, fi) 
-    pkl_op = InputMap.fromfile(tmpdir / "op.pkl")
-    assert type(pkl_op(img)) == type(img)
+    # test correct output size
+    assert out.shape == (mapih.output_size(IMG_SHAPE),)
+
+    # test factor rescale
+    fs = np.array([op.factor for op in mapih.ops])
+    fs = fs * 2
+    mapih = rescale(mapih, fs)
+    assert np.allclose(out * 2, mapih(img))
+
+    # test save / load
+    with open(tmpdir / "mapih.pkl", "wb") as fi:
+        joblib.dump(mapih, fi) 
+    pkl_mapih = InputMap.fromfile(tmpdir / "mapih.pkl")
+    assert type(pkl_mapih(img)) == type(img)
 
 
 if __name__ == "__main__":
