@@ -3,25 +3,36 @@ import jax.numpy as jnp
 from esn.imed import imed_matrix
 
 
-#@jax.jit  # TODO: this does not work yet because of dynamic shapes due to 'n'
+#@jax.jit
+# NOTE: this does not work because dynamic slicing is not suppored in jitted
+#       functions. 'n' is the dynamic part here...
 def lstsq_stable(H, labels, thresh=1e-5):
     if labels.ndim != 2:
         raise ValueError("Labels must have shape (time, features)")
 
-    U, s, Vh = jax.scipy.linalg.svd(H.T)
+    U, s, Vh = jax.scipy.linalg.svd(H.T, full_matrices=True)
     scale = s[0]
     n = jnp.sum(jnp.abs(s/scale) > thresh)  # Ensure condition number less than 1/thresh
     
     L = labels.T
-
     v = Vh[:n, :].T
     uh = U[:, :n].T
 
     wout = jnp.dot(jnp.dot(L, v) / s[:n], uh)
     return wout
 
+# NOTE: maybe this will help with dynamic slicing in the future?
+# from jax.lax import dynamic_slice
+# from functools import partial
+# @partial(jax.jit, static_argnums=(4,))
+# def _compute_wout(L, Vh, s, U, n):
+#     v  = dynamic_slice(Vh, (0,0), (n,Vh.shape[1])).T
+#     uh = dynamic_slice(U, (0,0), (U.shape[1],n)).T
+#     s_ = dynamic_slice(s, (0,), (n,))
+#     wout = jnp.dot(jnp.dot(L, v) / s_, uh)
+#     return wout
 
-#@jax.jit  # TODO: this does not work yet because of dynamic shapes due to 'n'
+
 def imed_lstsq_stable(states, inputs, labels, sigma):
     flat_inputs = inputs.reshape(inputs.shape[0], -1)
     flat_labels = labels.reshape(inputs.shape[0], -1)

@@ -60,17 +60,18 @@ def sparse_esn_1d_train_pred(tmpdir, data,
 
     _, (wys,_) = se.warmup_predict(model, labels[-Ntrans:], Npred)
 
+    mse = jnp.mean((ys - pred_labels)**2)
+    w_mse = jnp.mean((wys - pred_labels)**2)
     if plot_prediction:
+        import matplotlib
+        matplotlib.use('TkAgg')
         import matplotlib.pyplot as plt
         plt.plot(ys, label="Prediction")
         plt.plot(pred_labels.reshape(-1), label="Truth")
         plt.plot(wys, label="Warmup Prediction")
-        plt.title("500 step prediction vs. truth")
+        plt.title(f"500 step prediction vs. truth | MSE={mse}")
         plt.legend()
         plt.show()
-
-    mse = jnp.mean((ys - pred_labels)**2)
-    w_mse = jnp.mean((wys - pred_labels)**2)
     assert mse < mse_threshold
     assert w_mse < mse_threshold
     assert jnp.isclose(mse, w_mse)
