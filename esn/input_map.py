@@ -8,61 +8,39 @@ from jax import image
 from esn.dct import dct2
 from esn.utils import _fromfile
 
-class Operation:
 
-    @classmethod
-    def fromfile(cls, filename):
-        return _fromfile(filename)
+def make_operation(spec):
+    """
+    Creates an `Operation` from an operation spec.
+    Each operation accepts a 2D input and outputs a vector:
 
-    def device_put(self):
-        pass
+      op(img) -> vec
 
+    Possible operations specs are e.g.:
 
-"""
-Creates a callable object, that can be called with a 2D input image.
-The `InputMap` is composed of a number of `operation`s.
-Each `operation` again takes an image as input and outputs a vector.
-Possible operations include convolutions, random maps, resize, etc. For a full
-list of operations and their specifications see `make_operation`.
+      * Resampled pixels:
+        {"type":"pixel", "size": (3,3), "factor":1.}
 
-Params:
-    specs: list of dicts with that each specify an `operation`
+      * Random projection:
+          {"type":"random_weights", "input_size":10, "hidden_size":20,
+           "factor": 1.}
 
-Returns:
-    A function that can be called with a 2D array and that outputs
-    a 1D array (concatenated output of each op).
-"""
-class InputMap(Operation):
-    def __init__(self, specs):
-        self.ops = [make_operation(s) for s in specs]
+      * Convolutions:
+        {"type":"conv", "size": (4,4), # kernel size
+         "kernel": kernel_type,        # either "gauss"/"random"
+         "factor": 1.}
 
-    @partial(jax.jit, static_argnums=(0,))
-    def __call__(self, img):
-        return jnp.concatenate([op(img) for op in self.ops], axis=0) 
+      * Gradient:
+        {"type":"gradient", "factor": 1.}
 
-    def device_put(self):
-        for op in self.ops: op.device_put()
+      * Discrete Cosine Transform:
+        {"type":"dct", "size": (n,n)  # pick first n coefficients in each dimension,
+         "factor":0.1}
 
-    def output_size(self, input_shape):
-        return sum([op.output_size(input_shape) for op in self.ops])
-
-
-"""
-Creates an `operation` function from an operation spec.
-Each operation accepts a 2D input and outputs a vector:
-
-  op(img) -> vec
-
-Possible operations specs are:
-  * Convolutions:
-    {"type":"conv", "size": (4,4) # e.g. (4,4),
-     "kernel": kernel_type # either "gauss"/"random"}
-  * Resampled pixels:
-    {"type":"pixel", "size": (3,3)}
-  * Random map:
-      {"type":"random_weights", "input_size":10, "hidden_size":20}
-"""
-def make_operation(spec, data=None):
+    Every operation spec must contain at least a 'type' determining the kind of
+    operation and a 'factor' that is applied to the operation before outputing
+    the result (realized through a 'ScaleOp')
+    """
     optype = spec["type"]
     if optype == "pixels":
         op = PixelsOp(spec["size"])
@@ -82,6 +60,58 @@ def make_operation(spec, data=None):
     #_op = jax.jit(lambda img: op(img) * spec["factor"])
     return ScaleOp(spec["factor"], op)
 
+
+def rescale(mapih, factors):
+    ops = [ScaleOp(f,op.op) for (f,op) in zip(factors, mapih.ops)]
+    return InputMap(ops)
+
+
+class Operation:
+
+    @classmethod
+    def fromfile(cls, filename):
+        return _fromfile(filename)
+
+    def device_put(self):
+        pass
+
+    @classmethod
+    def fromspec(self, spec):
+        return make_operation(spec)
+
+
+class InputMap(Operation):
+    """
+    A callable object, that can be called with a 2D input image.  The
+    `InputMap` is composed of a number of `Operation`s.  Each `Operation` again
+    takes an image as input and outputs a vector.  Possible operations include
+    convolutions, random maps, resize, etc. For a full list of operations and
+    their specifications see `make_operation`.
+
+    Params:
+        specs: list of dicts with that each specify an `operation`
+
+    Returns:
+        A function that can be called with a 2D array and that outputs
+        a 1D array (concatenated output of each op).
+    """
+    def __init__(self, xs):
+        if isinstance(xs[0], dict):
+            self.ops = [make_operation(spec) for spec in xs]
+        elif isinstance(xs[0], ScaleOp):
+            self.ops = xs
+        else:
+            raise ValueError("'xs' must either be a list of 'ScaleOp's or 'dict's!")
+
+    @partial(jax.jit, static_argnums=(0,))
+    def __call__(self, img):
+        return jnp.concatenate([op(img) for op in self.ops], axis=0)
+
+    def device_put(self):
+        for op in self.ops: op.device_put()
+
+    def output_size(self, input_shape):
+        return sum([op.output_size(input_shape) for op in self.ops])
 
 
 class PixelsOp(Operation):
@@ -126,12 +156,13 @@ class RandWeightsOp(Operation):
 
 class ScaleOp(Operation):
     def __init__(self, factor, op):
-        self.a = factor
+        self.factor = factor
         self.op = op
 
     @partial(jax.jit, static_argnums=(0,))
     def __call__(self, img):
-        return self.a * self.op(img)
+        print(self.factor)
+        return self.factor * self.op(img)
 
     def device_put(self):
         self.op.device_put()
