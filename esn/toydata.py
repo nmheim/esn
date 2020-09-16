@@ -40,9 +40,10 @@ def square_sequence(toplefts=None, square_size=(3,3), size=(20,20), borders=[[-2
     return seq
 
 
-def mackey2d_sequence(sigma=0.5, size=[20,20], borders=[[-2, 2], [-2, 2]]):
-    t = np.arange(0, 500 * np.pi, 0.1)
-    x = normalize(mackey_sequence(N=t.shape[0])) * 2 - 1
+def mackey2d_sequence(N=5000, b=None, sigma=0.5, size=[20,20], borders=[[-2, 2], [-2, 2]]):
+    T = N*0.1
+    t = np.arange(0, T, 0.1)
+    x = normalize(mackey_sequence(b=b, N=N)) * 2 - 1
     y = np.cos(t)
     centers = np.array([y,x]).T
     return gauss2d_sequence(centers, sigma=sigma, size=size, borders=borders)
@@ -60,6 +61,8 @@ def mackey_sequence(b=None, N=3000):
 
     if b is None:
         b = np.zeros(N) + 0.1
+    if isinstance(b,float):
+        b = np.zeros(N) + b
 
     y = np.zeros(N)
     y[:yinit.shape[0]] = yinit
