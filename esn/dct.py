@@ -68,9 +68,20 @@ def isct2(Fkk, basis1, basis2):
     return Fxx
 
 
+def dct_coefficients(N):
+    alpha0 = 1
+    #TODO: alphaj = jnp.ones((N,N-1)) + 1
+    #      a = jnp.hstack(alpha0,alphaj)
+    a = jnp.sqrt(alpha0 / N)
+    k,j = jnp.meshgrid(jnp.arange(N),jnp.arange(N))
+    C = a * jnp.cos(jnp.pi * (2*k+1)*j / (2*N))
+    return C
+
 def dct2(Fxx, nk1, nk2):
     """Two dimensional discrete cosine transform"""
-    Fkk = dctn_from_fft(Fxx,axes=[0,1])[:nk1, :nk2]
+    #Fkk = dctn_from_fft(Fxx,axes=[0,1])[:nk1, :nk2]
+    C = dct_coefficients(Fxx.shape[0])
+    Fkk = C.dot(Fxx).dot(C.T)[:nk1,:nk2]
     return Fkk
 
 
