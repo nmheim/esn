@@ -6,7 +6,7 @@ from jax import lax
 from jax import image
 
 from esn.dct import dct2
-from esn.utils import _fromfile
+from esn.utils import _fromfile, normalize
 
 
 def make_operation(spec):
@@ -161,7 +161,6 @@ class ScaleOp(Operation):
 
     @partial(jax.jit, static_argnums=(0,))
     def __call__(self, img):
-        print(self.factor)
         return self.factor * self.op(img)
 
     def device_put(self):
@@ -177,7 +176,9 @@ class ScaleOp(Operation):
 class GradientOp(Operation):
     @partial(jax.jit, static_argnums=(0,))
     def __call__(self, img):
-        return jnp.concatenate(jnp.gradient(img)).reshape(-1)
+        x = jnp.gradient(img)
+        x = jnp.concatenate(x).reshape(-1)
+        return normalize(x)
 
     def output_size(self, input_shape):
         s = self.output_shape(input_shape)
