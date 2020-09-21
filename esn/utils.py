@@ -10,20 +10,15 @@ def split_train_label_pred(sequence, train_length, pred_length):
     return inputs, labels, pred_labels
 
 
-def normalize(data, vmin=None, vmax=None):
-    """Normalizes data to values from 0 to 1.
-    If vmin/vmax are given they are assumed to be the maximal
-    values of data"""
-    if vmin is None:
-        vmin = data.min()
-    if vmax is None:
-        vmax = data.max()
+def scale(x, a, b):
+    """Scale array 'x' to values in (a,b)"""
+    mi, ma = x.min(), x.max()
+    return (b-a) * (x - mi) / (ma-mi) + a
 
-    if vmin==vmax:
-        return np.zeros_like(data)
-    else:
-        return (data - vmin) / (vmax-vmin)
-
+def normalize(x):
+    """Normalize array 'x' to values in (0,1)"""
+    mi, ma = x.min(), x.max()
+    return (x - mi) / (ma-mi)
 
 def _fromfile(filename):
     with open(filename, "rb") as fi:
