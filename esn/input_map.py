@@ -205,16 +205,17 @@ class VorticityOp(Operation):
     
 
 class ConvOp(Operation):
-    def __init__(self, size, kernel):
+    def __init__(self, size, kernel, padding="SAME"):
         self.size = size
         self.name = kernel
         self.kernel = get_kernel(size, kernel)[np.newaxis,np.newaxis,:,:]
+        self.padding = padding
         self.device_put()
 
     @partial(jax.jit, static_argnums=(0,))
     def __call__(self, img):
         img = jnp.expand_dims(img, axis=(0,1))
-        out = lax.conv(img, self.kernel, (1,1), "VALID")
+        out = lax.conv(img, self.kernel, (1,1), self.padding)
         return out.reshape(-1)
 
     def device_put(self):
@@ -225,8 +226,14 @@ class ConvOp(Operation):
         return s[0] * s[1]
 
     def output_shape(self, input_shape):
-        (m,n) = self.size
-        return (input_shape[0]-m+1, input_shape[1]-n+1)
+        p = self.padding
+        if p == "SAME":
+            return input_shape
+        elif p == "VALID":
+            (m,n) = self.size
+            return (input_shape[0]-m+1, input_shape[1]-n+1)
+        else:
+            raise ValueError(f"'padding' must be either 'VALID' or 'SAME' - got: {p}")
 
 
 class DCTOp(Operation):
