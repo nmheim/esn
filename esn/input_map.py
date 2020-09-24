@@ -178,7 +178,7 @@ class GradientOp(Operation):
     def __call__(self, img):
         x = jnp.gradient(img)
         x = jnp.concatenate(x).reshape(-1)
-        return normalize(x)
+        return normalize(x)*2-1
 
     def output_size(self, input_shape):
         s = self.output_shape(input_shape)
