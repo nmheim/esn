@@ -30,7 +30,10 @@ def esncell(map_ih, hidden_size, spectral_radius=1.5, density=0.1):
     Returns:
         (Wih, Whh, bh)
     """
-    Whh = sparse_esn_reservoir(hidden_size, spectral_radius, density, False)
+    #Whh = sparse_esn_reservoir(hidden_size, spectral_radius, density, False)
+    nonzeros_per_row = int(hidden_size * density)
+    Whh = sparse_nzpr_esn_reservoir(hidden_size, spectral_radius, nonzeros_per_row)
+
     Whh = Whh.tocoo()
     bh  = np.random.uniform(-1, 1, (hidden_size,))
     model = (map_ih,
@@ -185,18 +188,32 @@ def sparse_esn_reservoir(size, spectral_radius, density, symmetric):
     matrix = matrix.multiply(spectral_radius)
     return matrix
 
+def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row):
+    dense_shape = (dim, dim)
+    nr_values = dim * nonzeros_per_row
 
-    map_ih = InputMap(input_map_specs)
-    Whh = sparse_esn_reservoir(hidden_size, spectral_radius, density, False)
-    Whh = Whh.tocoo()
-    bh  = np.random.uniform(-1, 1, (hidden_size,))
-    model = (map_ih,
-             ((jax.device_put(Whh.data),
-              jax.device_put(Whh.row),
-              jax.device_put(Whh.col)),
-             Whh.shape),
-             jax.device_put(bh))
-    return model
+    # get row_idx like: [0,0,0,1,1,1,....]
+    row_idx = np.tile(np.arange(dim)[:, None], nonzeros_per_row).reshape(-1)
+
+    # get col idx that are unique within each row
+    col_idx = []
+    for ii in range(dim):
+        cols = {np.random.randint(low=0, high=dim)}
+        while len(cols) < nonzeros_per_row:
+            cols.add(np.random.randint(low=0, high=dim))
+        col_idx += cols
+    col_idx = np.asarray(col_idx)
+    vals = np.random.uniform(low=-1, high=1, size=[nr_values])
+
+    # scipy sparse matrix
+    matrix = sparse.coo_matrix((vals, (row_idx, col_idx)))
+
+    # set spectral radius
+    eig, _ = sparse.linalg.eigs(matrix, k=2, tol=1e-4)
+    rho = np.abs(eig).max()
+    matrix = matrix.multiply(1. / rho)
+    matrix = matrix.multiply(spectral_radius)
+    return matrix
 
 
 def device_put(model_or_cell):
