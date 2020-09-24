@@ -1,5 +1,7 @@
 import pytest
 import joblib
+import numpy as np
+
 from jax.config import config
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
@@ -7,11 +9,9 @@ import jax.numpy as jnp
 from esn.input_map import InputMap
 from esn.utils import split_train_label_pred
 from esn.toydata import gauss2d_sequence, mackey2d_sequence
-import esn.sparse_esn as se
 from esn.imed import imed
+import esn.sparse_esn as se
 
-import numpy as np
-np.random.seed(1)
 
 def sparse_esn_2d_train_pred(tmpdir, data, specs,
                              spectral_radius=1.5,
@@ -21,6 +21,7 @@ def sparse_esn_2d_train_pred(tmpdir, data, specs,
                              Npred=500,         # Number of steps for free-running prediction
                              mse_threshold=1e-5,
                              plot_prediction=False):
+    np.random.seed(1)
     N = Ntrain + Npred + 1
     assert data.ndim == 3
     assert data.shape[0] >= N

@@ -1,4 +1,5 @@
 import joblib
+import numpy as np
 import jax.numpy as jnp
 from jax.config import config
 config.update("jax_enable_x64", True)
@@ -18,6 +19,8 @@ def sparse_esn_1d_train_pred(tmpdir, data,
                              plot_states=False,
                              plot_trained_outputs=False,
                              plot_prediction=False):
+    np.random.seed(0)
+
     N = Ntrain + Npred + 1
     assert data.ndim == 1
     assert data.shape[0] >= N
