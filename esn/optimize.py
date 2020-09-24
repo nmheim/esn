@@ -6,7 +6,7 @@ from esn.imed import imed_matrix
 #@jax.jit
 # NOTE: this does not work because dynamic slicing is not suppored in jitted
 #       functions. 'n' is the dynamic part here...
-def lstsq_stable(H, labels, thresh=1e-5):
+def lstsq_stable(H, labels, thresh=1e-4):
     if labels.ndim != 2:
         raise ValueError("Labels must have shape (time, features)")
 
