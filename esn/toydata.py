@@ -5,9 +5,11 @@ from esn.utils import normalize
 def gauss2d_sequence(centers=None, sigma=0.5, size=[20, 20], borders=[[-2, 2], [-2, 2]]):
     """Creates a moving gaussian blob on grid with `size`"""
     if centers is None:
-        t = np.arange(0, 500 * np.pi, 0.1)
-        x = np.sin(t)
-        y = np.cos(0.25 * t)
+        # t = np.arange(0,500*np.pi,0.1)
+        # x = np.sin(t)
+        # y = np.cos(0.25*t)
+        t = np.arange(0, 200 * np.pi, 0.02 * np.pi)
+        x, y = np.sin(0.3 * t), np.cos(t)
         centers = np.array([y, x]).T
 
     yc, xc = centers[:, 0], centers[:, 1]
