@@ -61,7 +61,8 @@ def generate_states(esncell, xs, h0):
     """
     (map_ih, (Whh, shape), bh) = esncell
     def _step(h, x):
-        h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(x) + bh)
+        #h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(x) + bh)
+        h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(x))
         return (h, h)
     (h, hs) = lax.scan(_step, h0, xs)
     return (h, hs)
@@ -119,7 +120,8 @@ def predict(model, y0, h0, Npred):
     def _step(input, xs):
         (y,h_augmented) = input
         h = h_augmented[aug_len:]
-        h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(y) + bh)
+        #h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(y) + bh)
+        h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(y))
         h = jnp.hstack([[1.], y.reshape(-1), h])
         y = Who.dot(h).reshape(y.shape)
         return ((y,h), (y,h))
