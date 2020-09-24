@@ -72,6 +72,7 @@ def sparse_esn_1d_train_pred(tmpdir, data,
         plt.title(f"500 step prediction vs. truth | MSE={mse}")
         plt.legend()
         plt.show()
+    print(f"MSE: {mse}")
     assert mse < mse_threshold
     assert w_mse < mse_threshold
     assert jnp.isclose(mse, w_mse)
