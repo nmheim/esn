@@ -95,7 +95,7 @@ def test_sparse_esn_lissajous(tmpdir):
     ]
 
     sparse_esn_2d_train_pred(tmpdir, data, specs,
-        plot_prediction=True, mse_threshold=1e-15,
+        plot_prediction=False, mse_threshold=1e-15,
         spectral_radius=2.0, density=0.01,
         Ntrain=2000, Npred=300, Ntrans=500)
 
