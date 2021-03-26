@@ -10,7 +10,7 @@ def lstsq_stable(H, labels, thresh=1e-4):
     if labels.ndim != 2:
         raise ValueError("Labels must have shape (time, features)")
 
-    U, s, Vh = jax.scipy.linalg.svd(H.T, full_matrices=True)
+    U, s, Vh = jax.scipy.linalg.svd(H.T, full_matrices=False)
     scale = s[0]
     n = jnp.sum(jnp.abs(s/scale) > thresh)  # Ensure condition number less than 1/thresh
     
