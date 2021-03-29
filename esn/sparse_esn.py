@@ -208,7 +208,7 @@ def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row):
     vals = np.random.uniform(low=-1, high=1, size=[nr_values])
 
     # scipy sparse matrix
-    matrix = sparse.coo_matrix((vals, (row_idx, col_idx)))
+    matrix = sparse.coo_matrix((vals, (row_idx, col_idx)),shape=dense_shape)
 
     # set spectral radius
     eig, _ = sparse.linalg.eigs(matrix, k=2, tol=1e-4)
