@@ -191,6 +191,9 @@ def sparse_esn_reservoir(size, spectral_radius, density, symmetric):
     return matrix
 
 def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row):
+    #random number generator
+    rng = default_rng()
+
     dense_shape = (dim, dim)
     nr_values = dim * nonzeros_per_row
 
@@ -200,10 +203,9 @@ def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row):
     # get col idx that are unique within each row
     col_idx = []
     for ii in range(dim):
-        cols = {np.random.randint(low=0, high=dim)}
-        while len(cols) < nonzeros_per_row:
-            cols.add(np.random.randint(low=0, high=dim))
-        col_idx += cols
+        #random generate without replacement
+        cols = tuple(rng.choice(dim, size=nonzeros_per_row, replace=False))
+        col_idx += (cols)
     col_idx = np.asarray(col_idx)
     vals = np.random.uniform(low=-1, high=1, size=[nr_values])
 
