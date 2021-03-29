@@ -192,7 +192,7 @@ def sparse_esn_reservoir(size, spectral_radius, density, symmetric):
 
 def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row):
     #random number generator
-    rng = default_rng()
+    rng = np.random.default_rng()
 
     dense_shape = (dim, dim)
     nr_values = dim * nonzeros_per_row
@@ -213,7 +213,7 @@ def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row):
     matrix = sparse.coo_matrix((vals, (row_idx, col_idx)),shape=dense_shape)
 
     # set spectral radius
-    eig, _ = sparse.linalg.eigs(matrix, k=2, tol=1e-4)
+    eig = sparse.linalg.eigs(matrix, k=1, tol=1e-1,return_eigenvectors=False)
     rho = np.abs(eig).max()
     matrix = matrix.multiply(1. / rho)
     matrix = matrix.multiply(spectral_radius)
