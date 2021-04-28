@@ -44,7 +44,6 @@ def esncell(map_ih, hidden_size, spectral_radius=1.5, density=0.1):
              jax.device_put(bh))
     return model
 
-
 def generate_states(esncell, xs, h0):
     """
     Apply and ESN defined by esncell (as in created from `sparse_esncell`) to
@@ -62,10 +61,45 @@ def generate_states(esncell, xs, h0):
     (map_ih, (Whh, shape), bh) = esncell
     def _step(h, x):
         #h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(x) + bh)
-        h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(x))
+        h = jnp.tanh(sp_dot(Whh, h, shape[0])  + map_ih(x))
         return (h, h)
     (h, hs) = lax.scan(_step, h0, xs)
     return (h, hs)
+
+def generate_states_scipy(esncell, xs, h0):
+    """
+    Apply and ESN defined by esncell (as in created from `sparse_esncell`) to
+    each input in xs with the initial state h0. Each new input uses the updated
+    state from the previous step.
+    Arguments:
+        esncell: An ESN tuple (Wih, Whh, bh)
+        xs: Array of inputs. Time in first dimension.
+        h0: Initial hidden state
+    Returns:
+        (h,hs) where
+        h: Final hidden state
+        hs: All hidden states
+    """
+    print("USING SCIPY")
+    (map_ih, (Whh, shape), bh) = esncell
+    Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()
+    H = np.zeros([xs.shape[0],shape[0]],dtype=np.float32)
+    print(f'map dtype {map_ih(xs[0]).dtype}')
+    H[0,:] = np.tanh((Whh.dot(h0))  + map_ih(xs[0]))
+    print(f'H dtype {H.dtype}')
+
+    for i in range(1,xs.shape[0]):
+        H[i,:] = np.tanh((Whh.dot(H[i-1,:]))  + map_ih(xs[i]))
+        
+    print(f'H dtype {H.dtype}')
+ 
+    """def _step(h, x):
+        #h = jnp.tanh(sp_dot(Whh, h, shape[0]) + map_ih(x) + bh)
+        h = jnp.tanh(jax.device_put(Whh.dot(h))  + map_ih(x))
+        return (h, h)
+    (h, hs) = lax.scan(_step, h0, xs)"""
+    #return (h, hs)
+    return (h0, H)
 
 
 def train(esncell, states, labels):
@@ -85,7 +119,13 @@ def train(esncell, states, labels):
 
 def train_imed(esncell, states, inputs, labels, sigma=1.):
     """Compute the output matrix via least squares in IMED space and add it
-    to the esncell tuple to create a model tuple.
+    to the esncell tuple to cwith set_backend(pyfftw.interfaces.scipy_fft), pyfftw.interfaces.scipy_fft.set_workers(-1):
+        #faster if we enable cache using pyfftw
+        pyfftw.interfaces.cache.enable()
+        # perform standardizing transform using frequency method of your choice
+        inputs = ST_ndim_DCT(inputs,sigma=sigma,eps=eps,inverse=False)
+        labels = ST_ndim_DCT(labels,sigma=sigma,eps=eps,inverse=False)
+        pred_labels = ST_ndim_DCT(pred_labels,sigma=sigma,eps=eps,inverse=False)100reate a model tuple.
 
     Params:
         esncell: ESN tuple (mapih, Whh, bh)
@@ -130,6 +170,49 @@ def predict(model, y0, h0, Npred):
     ((y,h), (ys,hs)) = lax.scan(_step, (y0,h0), xs)
     return ((y,h), (ys,hs))
 
+def predict_scipy(model, y0, h0, Npred):
+    print('PREDICT SCIPY')
+    """
+    Given a trained model = (Wih,Whh,bh,Who), a start internal state h0, and input
+    y0 predict in free-running mode for Npred steps into the future, with
+    output feeding back y_n as next input:
+
+      h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
+      y_{n+1} = Who h_{n+1}
+    """
+    if y0.ndim == 1:
+        aug_len = y0.shape[0] + 1
+    elif y0.ndim == 2:
+        aug_len = y0.shape[0] * y0.shape[1] + 1
+    else:
+        raise ValueError("'y0' must either be a vector or a matrix.")
+    
+    (map_ih,(Whh,shape),bh,Who) = model
+    Who = np.array(Who)
+    Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()    
+    H = np.zeros([Npred,aug_len+shape[0]],dtype=np.float32)
+    H[:,0] = 1.
+    Y = np.zeros([Npred,y0.size])
+
+    #first run
+    y = y0
+    h = h0[aug_len:]
+    h = np.tanh(Whh.dot(h) + map_ih(y))
+    
+    H[0,1:aug_len] = y.reshape(-1)
+    H[0,aug_len:]  = h
+    Y[0,:] = Who.dot(H[0,:])
+    for i in range(1,Npred):
+        (y,h) = Y[i-1,:] , H[i-1,aug_len:]
+        h = np.tanh(Whh.dot(h) + map_ih(y.reshape(y0.shape)))
+        H[i,1:aug_len] = y.reshape(-1)
+        H[i,aug_len:]  = h
+        Y[i,:] = Who.dot(H[i,:])
+  
+    ys = Y.reshape(np.hstack((Npred,y0.shape)))
+    
+    return ((ys[-1,:],H[-1,:]), (ys,H))
+
 
 def warmup_predict(model, imgs, Npred):
     """
@@ -147,15 +230,15 @@ def hidden_size(esn):
     (_,shape) = esn[1]
     return shape[0]
 
-
 def augmented_state_matrix(esncell, inputs, Ntrans):
     Ntrain = inputs.shape[0]
 
     h0 = jnp.zeros(hidden_size(esncell))
 
-    (_,H) = generate_states(esncell, inputs, h0)
-    H = jnp.vstack(H)
-
+    (_,H) = generate_states_scipy(esncell, inputs, h0)
+    
+    #H_stacked = jnp.vstack(H)
+    
     H0 = H[Ntrans:]
     I0 = inputs[Ntrans:].reshape(Ntrain-Ntrans,-1)
     ones = jnp.ones((Ntrain-Ntrans,1))
@@ -191,6 +274,8 @@ def sparse_esn_reservoir(size, spectral_radius, density, symmetric):
     return matrix
 
 def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row):
+    nonzeros_per_row = 100
+    print(f'Using {nonzeros_per_row} nonzeros per row')
     #random number generator
     rng = np.random.default_rng()
 
@@ -208,15 +293,17 @@ def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row):
         col_idx += (cols)
     col_idx = np.asarray(col_idx)
     vals = np.random.uniform(low=-1, high=1, size=[nr_values])
+    #vals = np.random.normal(loc=0.0, scale=1.0, size=[nr_values])
 
+    
     # scipy sparse matrix
     matrix = sparse.coo_matrix((vals, (row_idx, col_idx)),shape=dense_shape)
 
     # set spectral radius
-    eig = sparse.linalg.eigs(matrix, k=1, tol=1e-1,return_eigenvectors=False)
-    rho = np.abs(eig).max()
-    matrix = matrix.multiply(1. / rho)
-    matrix = matrix.multiply(spectral_radius)
+    var = np.var(vals)
+    rho = np.sqrt(var*nonzeros_per_row)
+    matrix = matrix.multiply(spectral_radius / rho)
+    
     return matrix
 
 

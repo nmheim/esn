@@ -17,6 +17,8 @@ def lstsq_stable(H, labels, thresh=1e-4):
     L = labels.T
     v = Vh[:n, :].T
     uh = U[:, :n].T
+    
+    del U
 
     wout = jnp.dot(jnp.dot(L, v) / s[:n], uh)
     return wout
