@@ -16,7 +16,6 @@ from scipy.fft import set_backend
 from IMED.standardizingTrans_ndim import ST_ndim_DCT
 from time import time
 
-%whos
 def sparse_esn_2d_train_pred(tmpdir, data, specs,
                              spectral_radius=1.5,
                              density=0.01,
@@ -159,7 +158,6 @@ def sparse_esn_2d_train_pred(tmpdir, data, specs,
         ys_anim.save(f'{tmpdir}/ys_anim.gif',writer=animation.PillowWriter(fps=24))
         pred_labels_orig_anim.save(f'{tmpdir}/pred_labels_orig_anim.gif',writer=animation.PillowWriter(fps=24))
 
-    %whos
     
 """
     with open(tmpdir / "esn.pkl", "wb") as fi:
