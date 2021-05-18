@@ -15,6 +15,21 @@ from scipy.fft import set_backend
 
 from IMED.standardizingTrans_ndim import ST_ndim_DCT
 from time import time
+import gc
+import sys
+def sizeof_fmt(num, suffix='B'):
+    ''' by Fred Cirera,  https://stackoverflow.com/a/1094933/1870254, modified'''
+    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f %s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f %s%s" % (num, 'Yi', suffix)
+            
+def print_globals():
+    for name, size in sorted(((name, sys.getsizeof(value)) for name, value in globals().items()),
+                         key= lambda x: -x[1])[:10]:
+            print("{:>30}: {:>8}".format(name, sizeof_fmt(size)))
+    
 
 def sparse_esn_2d_train_pred(tmpdir, data, specs,
                              spectral_radius=1.5,
@@ -41,7 +56,7 @@ def sparse_esn_2d_train_pred(tmpdir, data, specs,
     # prepare data
     inputs, labels, pred_labels = split_train_label_pred(data,Ntrain,Npred)
     pred_labels_orig = np.copy(pred_labels)
-        
+    
     #transform input - labels should be independent from input
     print(f'Using sigma: {sigma}, eps: {eps}')
     with set_backend(pyfftw.interfaces.scipy_fft), pyfftw.interfaces.scipy_fft.set_workers(-1):
@@ -53,6 +68,7 @@ def sparse_esn_2d_train_pred(tmpdir, data, specs,
         pred_labels = ST_ndim_DCT(pred_labels,sigma=sigma,eps=eps,inverse=False)
 
     img_shape = inputs.shape[1:]
+    
 
     # build esn
     start = time()
@@ -63,30 +79,47 @@ def sparse_esn_2d_train_pred(tmpdir, data, specs,
     esn[-1].block_until_ready()
     end = time()
     print(f'building took {end-start:.2f}')
-    
+        
     start = time()
     # compute training states
+    print(f'inputs have shape {inputs.shape}')
     H = se.augmented_state_matrix(esn, inputs, Ntrans)
+    print(f'H has shape {H.shape}')
     H.block_until_ready()
+    
     end = time()
     print(f'state harvesting took {end-start:.2f}')
-
+     
+    
     # compute last layer without imed
     _labels = labels.reshape(inputs.shape[0], -1)
-    
+    print(f'_labels[Ntrans:] has shape {_labels[Ntrans:].shape}')
     start = time()
     model = se.train(esn, H, _labels[Ntrans:])
     model[-1].block_until_ready()
     end = time()
     print(f'lstsq optimization took {end-start:.2f}')
-
+    
+    for name, size in sorted(((name, sys.getsizeof(value)) for name, value in locals().items()),
+                     key= lambda x: -x[1])[:10]:
+        print("{:>30}: {:>8}".format(name, sizeof_fmt(size)))
+    
     # predict
     start = time()
     y0, h0 = labels[-1], H[-1]
-    (y,h), (ys,hs) = se.predict_scipy(model, y0, h0, Npred)
+    del H
+    gc.collect()
+    print(f'whoVh takes up {model[-1].nbytes*1e-9}GB with shape {model[-1].shape}, dtype {model[-1].dtype}')
+
+    #(y,h), (ys,hs) = se.predict(model, y0, h0, Npred)
+    #(y,h), (ys,hs) = se.predict_scipy(model, y0, h0, Npred)
+    #ys = se.predict_scipy(model, y0, h0, Npred,return_H=False)
+    ys = se.predict_scipy_stack(model, y0, h0, Npred,return_H=False)
+
     jnp.asarray(ys).block_until_ready()
     end = time()
     print(f'predicting took {end-start:.2f}')
+    
     
     print(f'ys has shape {ys.shape}')
     # predict with warump of Ntrain frames
@@ -194,40 +227,41 @@ def test_sparse_esn_lissajous(tmpdir):
 
     sparse_esn_2d_train_pred(tmpdir, data, specs,
         plot_prediction=True, mse_threshold=1e-15,
-        spectral_radius=2.0, density=0.01,
+        spectral_radius=2.0, density=10,
         Ntrain=2500, Npred=300, Ntrans=500,eps=1e-7,sigma=(0.,1,1))
 
 
 def test_sparse_esn_chaotic(tmpdir):
     print('Running chaotic...')
-    input_shape = (100,100)
+    input_shape = (30,30)
     input_size  = input_shape[0] * input_shape[1]
 
     data = mackey2d_sequence(size=input_shape)
     
     specs = [
-        {"type":"pixels", "size":input_shape, "factor": 3.},
-        {"type":"conv", "size":(3,3),   "kernel":"gauss",  "factor": 2.},
-        {"type":"conv", "size":(5,5),   "kernel":"gauss",  "factor": 2.},
-        {"type":"conv", "size":(7,7),   "kernel":"gauss",  "factor": 2.},
-        {"type":"conv", "size":(9,9),   "kernel":"gauss",  "factor": 2.},
-        {"type":"conv", "size":(3,3),   "kernel":"random", "factor": 2.},
-        {"type":"conv", "size":(5,5),   "kernel":"random", "factor": 2.},
-        {"type":"conv", "size":(7,7),   "kernel":"random", "factor": 2.},
-        {"type":"conv", "size":(9,9),   "kernel":"random", "factor": 2.},
-        {"type":"gradient", "factor": 2.},
-        {"type":"dct", "size":(15,15), "factor": 0.1},
-        {"type":"random_weights", "input_size":input_size, "hidden_size":3500, "factor": 1.},
+        #{"type":"pixels", "size":input_shape, "factor": 1.},
+        {"type":"conv", "size":(3,3),   "kernel":"gauss",  "factor": 1.},        
+        {"type":"conv", "size":(5,5),   "kernel":"gauss",  "factor": 1.},
+        {"type":"conv", "size":(7,7),   "kernel":"gauss",  "factor": 1.},
+        {"type":"conv", "size":(9,9),   "kernel":"gauss",  "factor": 1.},
+        {"type":"conv", "size":(11,11),   "kernel":"gauss",  "factor": 1.},
+        {"type":"conv", "size":(13,13),   "kernel":"gauss",  "factor": 1.},
+        {"type":"gradient", "factor": 1.},
+        #{"type":"dct", "size":(5,5), "factor": 1},
+        #{"type":"dct", "size":(13,13), "factor": 1},
+        #{"type":"random_weights", "input_size":input_size, "hidden_size":15000, "factor": 1.},
     ]
+    
+
     
     sparse_esn_2d_train_pred(tmpdir, data, specs,
         plot_prediction=True, mse_threshold=1e-2,
-        spectral_radius=5.0, density=0.01,
-        Ntrain=2500, Npred=300, Ntrans=500,eps=1e-10,sigma=(0,1,1))
+        spectral_radius=1.4, density=49,
+        Ntrain=3000, Npred=300, Ntrans=500,eps=1e-5,sigma=(0.05,0.5,0.5))
 
 
 
 if __name__ == "__main__":
-    test_sparse_esn_lissajous("tmp")
-    #test_sparse_esn_chaotic("tmp")
+    #test_sparse_esn_lissajous("tmp")
+    test_sparse_esn_chaotic("tmp")
 

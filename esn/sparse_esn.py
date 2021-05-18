@@ -9,7 +9,7 @@ import jax.numpy as jnp
 from jax import lax
 
 from esn.jaxsparse import sp_dot
-from esn.optimize import lstsq_stable, imed_lstsq_stable
+from esn.optimize import lstsq_stable, imed_lstsq_stable, lstsq_pcr
 from esn.utils import _fromfile
 
 
@@ -31,7 +31,7 @@ def esncell(map_ih, hidden_size, spectral_radius=1.5, density=0.1):
         (Wih, Whh, bh)
     """
     #Whh = sparse_esn_reservoir(hidden_size, spectral_radius, density, False)
-    nonzeros_per_row = int(hidden_size * density)
+    nonzeros_per_row = int(density)#int(hidden_size * density)
     Whh = sparse_nzpr_esn_reservoir(hidden_size, spectral_radius, nonzeros_per_row)
 
     Whh = Whh.tocoo()
@@ -82,8 +82,8 @@ def generate_states_scipy(esncell, xs, h0):
     """
     print("USING SCIPY")
     (map_ih, (Whh, shape), bh) = esncell
-    Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()
-    H = np.zeros([xs.shape[0],shape[0]],dtype=np.float32)
+    Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float64).tocsr()
+    H = np.zeros([xs.shape[0],shape[0]],dtype=np.float64)
     print(f'map dtype {map_ih(xs[0]).dtype}')
     H[0,:] = np.tanh((Whh.dot(h0))  + map_ih(xs[0]))
     print(f'H dtype {H.dtype}')
@@ -170,7 +170,8 @@ def predict(model, y0, h0, Npred):
     ((y,h), (ys,hs)) = lax.scan(_step, (y0,h0), xs)
     return ((y,h), (ys,hs))
 
-def predict_scipy(model, y0, h0, Npred):
+
+def predict_scipy(model, y0, h0, Npred,return_H=True):
     print('PREDICT SCIPY')
     """
     Given a trained model = (Wih,Whh,bh,Who), a start internal state h0, and input
@@ -186,32 +187,306 @@ def predict_scipy(model, y0, h0, Npred):
         aug_len = y0.shape[0] * y0.shape[1] + 1
     else:
         raise ValueError("'y0' must either be a vector or a matrix.")
-    
-    (map_ih,(Whh,shape),bh,Who) = model
-    Who = np.array(Who)
-    Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()    
-    H = np.zeros([Npred,aug_len+shape[0]],dtype=np.float32)
-    H[:,0] = 1.
-    Y = np.zeros([Npred,y0.size])
+        
+    if return_H == False:
+        print('Not returning H when predicting')
+        (map_ih,(Whh,shape),bh,Who) = model
+        Who = np.array(Who,dtype=np.float32)
+        Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()    
+        h = np.zeros([aug_len+shape[0]],dtype=np.float64)
+        h[0] = 1.
+        Y = np.zeros([Npred,y0.size])
 
-    #first run
-    y = y0
-    h = h0[aug_len:]
-    h = np.tanh(Whh.dot(h) + map_ih(y))
+        #first run
+        y = y0
+        h[aug_len:] = np.tanh(Whh.dot(h0[aug_len:]) + map_ih(y))
+        h[1:aug_len] =y.reshape(-1)
+        Y[0,:] = Who.dot(h)
+        for i in range(1,Npred):
+            y = Y[i-1,:]
+            h[aug_len:] = np.tanh(Whh.dot(h[aug_len:]) + map_ih(y.reshape(y0.shape)) )
+            h[1:aug_len] = y.reshape(-1)
+            Y[i,:] = Who.dot(h)
     
-    H[0,1:aug_len] = y.reshape(-1)
-    H[0,aug_len:]  = h
-    Y[0,:] = Who.dot(H[0,:])
-    for i in range(1,Npred):
-        (y,h) = Y[i-1,:] , H[i-1,aug_len:]
-        h = np.tanh(Whh.dot(h) + map_ih(y.reshape(y0.shape)))
-        H[i,1:aug_len] = y.reshape(-1)
-        H[i,aug_len:]  = h
-        Y[i,:] = Who.dot(H[i,:])
+        Y = Y.reshape(np.hstack((Npred,y0.shape)))
+
+        return Y
+    
+def predict_reduced_sklearn(model, y0, h0, Npred,pca_object,return_H=True):
+    print('PREDICT REDUCED')
+    """
+    Given a trained model = (Wih,Whh,bh,Who), a start internal state h0, and input
+    y0 predict in free-running mode for Npred steps into the future, with
+    output feeding back y_n as next input:
+
+      h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
+      y_{n+1} = Who h_{n+1}
+    """
+    (map_ih,(Whh,shape),bh,Who) = model
+    Who = np.array(Who,dtype=np.float64)
+    Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float64).tocsr()    
+    #infer number of stacked inputs and number of bias parameters in h0
+    
+    Nhidden = map_ih(y0).shape[0]
+    max_stacks = 6
+    max_Nbias  = 1
+    for Nbias in range(max_Nbias+1):
+        for stacks in range(max_stacks+1):
+            if (h0.shape[0] == Nhidden+(y0.size)*stacks+Nbias):
+                print(f'Inferred that Nbias = {Nbias}, stacks = {stacks}')
+                break
+        else:
+            # Continue if the inner loop wasn't broken.
+            continue
+        # Inner loop was broken, break the outer.
+        break
+
+   
+    input_size = y0.size
+    if y0.ndim == 1:
+        aug_len = y0.shape[0]*stacks + Nbias
+    elif y0.ndim == 2:
+        aug_len = (y0.shape[0] * y0.shape[1])*stacks + Nbias
+    else:
+        raise ValueError("'y0' must either be a vector or a matrix.")
+        
+    if return_H == False:
+        print('Not returning H when predicting')
+        h = np.array(h0)
+        Y = np.zeros([Npred+stacks,y0.size])
+        for s in range(stacks-1):
+            Y[s] = h0[Nbias+input_size*(s+1):Nbias+input_size*(s+2)]
+        Y[stacks-1] = y0.reshape(-1)
+        
+        for i in range(stacks,stacks+Npred):
+            y = Y[i-1]
+
+            Whh.dot(h[aug_len:])
+            map_ih(y.reshape(y0.shape))
+            h[aug_len:] = np.tanh(Whh.dot(h[aug_len:]) + map_ih(y.reshape(y0.shape)))
+            #print(f'In Y is there nan at i={i-1}? {np.isnan(Y[i-1]).all()}')
+            
+            for s in range(stacks):
+                h[Nbias+input_size*s:Nbias+input_size*(s+1)] = Y[i-stacks+s]
+            #print(f'In h is there nan at i={i}? {np.isnan(h).all()}')
+           
+            #reduced h
+            h_r = np.squeeze( pca_object.transform(h.reshape(1,-1)) )
+           
+            Y[i,:] = Who.dot(h_r)
+    
+        Y = Y[stacks:].reshape(np.hstack((Npred,y0.shape)))
+
+        return Y
+    
+    else:
+        (map_ih,(Whh,shape),bh,Who) = model
+        Who = np.array(Who,dtype=np.float32)
+        Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()    
+        H = np.zeros([Npred,aug_len+shape[0]],dtype=np.float32)
+        H[:,0] = 1.
+        Y = np.zeros([Npred,y0.size],dtype=np.float32)
+        #first run
+        y = y0
+        h = h0[aug_len:]
+        h = np.tanh(Whh.dot(h) + map_ih(y))
+        H[0,1:aug_len] = y.reshape(-1)
+        H[0,aug_len:]  = h
+        Y[0,:] = Who.dot(H[0,:])
+        for i in range(1,Npred):
+            (y,h) = Y[i-1,:] , H[i-1,aug_len:]
+            h = np.tanh(Whh.dot(h) + map_ih(y.reshape(y0.shape)))
+            H[i,1:aug_len] = y.reshape(-1)
+            H[i,aug_len:]  = h
+            Y[i,:] = Who.dot(H[i,:])
   
-    ys = Y.reshape(np.hstack((Npred,y0.shape)))
+        Y = Y.reshape(np.hstack((Npred,y0.shape)))
+
+        return ((ys[-1,:],H[-1,:]), (Y,H))
     
-    return ((ys[-1,:],H[-1,:]), (ys,H))
+    
+def predict_reduced(model, y0, h0, Npred,v,mean,return_H=True):
+    print('PREDICT REDUCED')
+    """
+    Given a trained model = (Wih,Whh,bh,Who), a start internal state h0, and input
+    y0 predict in free-running mode for Npred steps into the future, with
+    output feeding back y_n as next input:
+
+      h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
+      y_{n+1} = Who h_{n+1}
+    """
+    (map_ih,(Whh,shape),bh,Who) = model
+    Who = np.array(Who,dtype=np.float64)
+    Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float64).tocsr()    
+    #infer number of stacked inputs and number of bias parameters in h0
+    
+    Nhidden = map_ih(y0).shape[0]
+    max_stacks = 6
+    max_Nbias  = 1
+    for Nbias in range(max_Nbias+1):
+        for stacks in range(max_stacks+1):
+            if (h0.shape[0] == Nhidden+(y0.size)*stacks+Nbias):
+                print(f'Inferred that Nbias = {Nbias}, stacks = {stacks}')
+                break
+        else:
+            # Continue if the inner loop wasn't broken.
+            continue
+        # Inner loop was broken, break the outer.
+        break
+
+   
+    input_size = y0.size
+    if y0.ndim == 1:
+        aug_len = y0.shape[0]*stacks + Nbias
+    elif y0.ndim == 2:
+        aug_len = (y0.shape[0] * y0.shape[1])*stacks + Nbias
+    else:
+        raise ValueError("'y0' must either be a vector or a matrix.")
+        
+    if return_H == False:
+        print('Not returning H when predicting')
+        h = np.array(h0)+mean
+        Y = np.zeros([Npred+stacks,y0.size])
+        for s in range(stacks-1):
+            Y[s] = h0[Nbias+input_size*(s+1):Nbias+input_size*(s+2)]
+        Y[stacks-1] = y0.reshape(-1)
+        
+        for i in range(stacks,stacks+Npred):
+            y = Y[i-1]
+
+            h[aug_len:] = np.tanh(Whh.dot(h[aug_len:]) + map_ih(y.reshape(y0.shape)))
+            
+            for s in range(stacks):
+                h[Nbias+input_size*s:Nbias+input_size*(s+1)] = Y[i-stacks+s]
+            #print(f'In h is there nan at i={i}? {np.isnan(h).all()}')
+            
+            #centered h
+            h2 = h - mean
+            #reduced h
+            h_r = h2.dot(v)
+            h_r[-1] = 1. # bias term 
+
+            Y[i,:] = Who.dot(h_r)
+    
+        Y = Y[stacks:].reshape(np.hstack((Npred,y0.shape)))
+
+        return Y
+    
+    else:
+        (map_ih,(Whh,shape),bh,Who) = model
+        Who = np.array(Who,dtype=np.float32)
+        Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()    
+        H = np.zeros([Npred,aug_len+shape[0]],dtype=np.float32)
+        H[:,0] = 1.
+        Y = np.zeros([Npred,y0.size],dtype=np.float32)
+        #first run
+        y = y0
+        h = h0[aug_len:]
+        h = np.tanh(Whh.dot(h) + map_ih(y))
+        H[0,1:aug_len] = y.reshape(-1)
+        H[0,aug_len:]  = h
+        Y[0,:] = Who.dot(H[0,:])
+        for i in range(1,Npred):
+            (y,h) = Y[i-1,:] , H[i-1,aug_len:]
+            h = np.tanh(Whh.dot(h) + map_ih(y.reshape(y0.shape)))
+            H[i,1:aug_len] = y.reshape(-1)
+            H[i,aug_len:]  = h
+            Y[i,:] = Who.dot(H[i,:])
+  
+        Y = Y.reshape(np.hstack((Npred,y0.shape)))
+
+        return ((ys[-1,:],H[-1,:]), (Y,H))
+
+def predict_scipy_stack(model, y0, h0, Npred,return_H=False,v=False):
+    print('PREDICT SCIPY')
+    """
+    Given a trained model = (Wih,Whh,bh,Who), a start internal state h0, and input
+    y0 predict in free-running mode for Npred steps into the future, with
+    output feeding back y_n as next input:
+
+      h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
+      y_{n+1} = Who h_{n+1}
+    """
+    (map_ih,(Whh,shape),bh,Who) = model
+    Who = np.array(Who,dtype=np.float64)
+    Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float64).tocsr()    
+    #infer number of stacked inputs and number of bias parameters in h0
+    
+    Nhidden = map_ih(y0).shape[0]
+    max_stacks = 6
+    max_Nbias  = 1
+    for Nbias in range(max_Nbias+1):
+        for stacks in range(max_stacks+1):
+            if (h0.shape[0] == Nhidden+(y0.size)*stacks+Nbias):
+                print(f'Inferred that Nbias = {Nbias}, stacks = {stacks}')
+                break
+        else:
+            # Continue if the inner loop wasn't broken.
+            continue
+        # Inner loop was broken, break the outer.
+        break
+
+   
+    input_size = y0.size
+    if y0.ndim == 1:
+        aug_len = y0.shape[0]*stacks + Nbias
+    elif y0.ndim == 2:
+        aug_len = (y0.shape[0] * y0.shape[1])*stacks + Nbias
+    else:
+        raise ValueError("'y0' must either be a vector or a matrix.")
+        
+    if return_H == False:
+        print('Not returning H when predicting')
+        h = np.array(h0)
+        Y = np.zeros([Npred+stacks,y0.size])
+        for s in range(stacks-1):
+            Y[s] = h0[Nbias+input_size*(s+1):Nbias+input_size*(s+2)]
+        Y[stacks-1] = y0.reshape(-1)
+        
+        for i in range(stacks,stacks+Npred):
+            y = Y[i-1]
+
+            Whh.dot(h[aug_len:])
+            map_ih(y.reshape(y0.shape))
+            h[aug_len:] = np.tanh(Whh.dot(h[aug_len:]) + map_ih(y.reshape(y0.shape)))
+            #print(f'In Y is there nan at i={i-1}? {np.isnan(Y[i-1]).all()}')
+            
+            for s in range(stacks):
+                h[Nbias+input_size*s:Nbias+input_size*(s+1)] = Y[i-stacks+s]
+            #print(f'In h is there nan at i={i}? {np.isnan(h).all()}')
+            
+            Y[i,:] = Who.dot(h)
+    
+        Y = Y[stacks:].reshape(np.hstack((Npred,y0.shape)))
+
+        return Y
+    
+    else:
+        (map_ih,(Whh,shape),bh,Who) = model
+        Who = np.array(Who,dtype=np.float32)
+        Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()    
+        H = np.zeros([Npred,aug_len+shape[0]],dtype=np.float32)
+        H[:,0] = 1.
+        Y = np.zeros([Npred,y0.size],dtype=np.float32)
+        #first run
+        y = y0
+        h = h0[aug_len:]
+        h = np.tanh(Whh.dot(h) + map_ih(y))
+        H[0,1:aug_len] = y.reshape(-1)
+        H[0,aug_len:]  = h
+        Y[0,:] = Who.dot(H[0,:])
+        for i in range(1,Npred):
+            (y,h) = Y[i-1,:] , H[i-1,aug_len:]
+            h = np.tanh(Whh.dot(h) + map_ih(y.reshape(y0.shape)))
+            H[i,1:aug_len] = y.reshape(-1)
+            H[i,aug_len:]  = h
+            Y[i,:] = Who.dot(H[i,:])
+  
+        Y = Y.reshape(np.hstack((Npred,y0.shape)))
+
+        return ((ys[-1,:],H[-1,:]), (Y,H))
+    
+    
 
 
 def warmup_predict(model, imgs, Npred):
@@ -230,19 +505,50 @@ def hidden_size(esn):
     (_,shape) = esn[1]
     return shape[0]
 
+
 def augmented_state_matrix(esncell, inputs, Ntrans):
     Ntrain = inputs.shape[0]
 
     h0 = jnp.zeros(hidden_size(esncell))
 
-    (_,H) = generate_states_scipy(esncell, inputs, h0)
-    
-    #H_stacked = jnp.vstack(H)
-    
+    (_,H) = generate_states(esncell, inputs, h0)
+    H = jnp.vstack(H)
+
     H0 = H[Ntrans:]
     I0 = inputs[Ntrans:].reshape(Ntrain-Ntrans,-1)
     ones = jnp.ones((Ntrain-Ntrans,1))
     return jnp.concatenate([ones,I0,H0], axis=1)
+
+def augmented_state_matrix_stack(esncell, inputs, Ntrans):
+    Ntrain = inputs.shape[0]
+
+    h0 = jnp.zeros(hidden_size(esncell))
+
+    (_,H) = generate_states_scipy(esncell, inputs, h0)
+    print(f'H has shape')
+    
+    #H_stacked = jnp.vstack(H)
+    input_shape_spatial = int(np.prod(inputs.shape[1:]))
+    H0 = H[Ntrans:]
+
+    """I0 = inputs[Ntrans:].reshape(Ntrain-Ntrans,-1)
+    I1 = inputs[Ntrans-1:-1].reshape(Ntrain-Ntrans,-1)
+    I2 = inputs[Ntrans-2:-2].reshape(Ntrain-Ntrans,-1)
+    I3 = inputs[Ntrans-3:-3].reshape(Ntrain-Ntrans,-1)
+    I4 = inputs[Ntrans-4:-4].reshape(Ntrain-Ntrans,-1)
+    I5 = inputs[Ntrans-5:-5].reshape(Ntrain-Ntrans,-1)
+
+    
+    ones = jnp.ones((Ntrain-Ntrans,1))"""
+    #H = np.array(jnp.concatenate([ones,I4,I3,I2,I1,I0,H0], axis=1))
+    H = np.array(H0)
+
+    
+    """dropout_ratio = 0.2
+    x_cords = np.random.randint(low=0,high=H.shape[0],size=int(H.shape[0]*dropout_ratio))
+    y_cords = np.random.randint(low=0,high=H.shape[1],size=len(x_cords))
+    H[x_cords,y_cords]=0"""
+    return H
 
 
 def sparse_esn_reservoir(size, spectral_radius, density, symmetric):
@@ -274,11 +580,13 @@ def sparse_esn_reservoir(size, spectral_radius, density, symmetric):
     return matrix
 
 def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row):
-    nonzeros_per_row = 100
+    #nonzeros_per_row = 100
     print(f'Using {nonzeros_per_row} nonzeros per row')
     #random number generator
+    """seed = np.random.get_state()[1][0]
+    # Note I am using seed here
+    rng = np.random.default_rng(seed)"""
     rng = np.random.default_rng()
-
     dense_shape = (dim, dim)
     nr_values = dim * nonzeros_per_row
 
