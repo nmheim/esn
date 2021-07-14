@@ -1,14 +1,15 @@
 import joblib
 import numpy as np
 import scipy.stats as stats
-from scipy import sparse
+from scipy.sparse import coo_matrix, csr_matrix
+from scipy.sparse.linalg import eigs
 
 #from esn_dev.jaxsparse import sp_dot
 from esn_dev.optimize import lstsq_stable, imed_lstsq_stable, lstsq_pcr
 from esn_dev.utils import _fromfile
+from sklearn.decomposition import KernelPCA, PCA
 
-
-def esncell(map_ih, hidden_size, spectral_radius=1.5, neuron_connections=10, neuron_dist='uniform'):
+def esncell(map_ih, hidden_size, spectral_radius=1.5, neuron_connections=10, neuron_dist='uniform',dtype=None):
     """
     Create an ESN with input, and hidden weights represented as a tuple:
 
@@ -27,19 +28,91 @@ def esncell(map_ih, hidden_size, spectral_radius=1.5, neuron_connections=10, neu
         (Wih, Whh, bh)
     """
     nonzeros_per_row = int(neuron_connections)
-    Whh = sparse_nzpr_esn_reservoir(hidden_size, spectral_radius, nonzeros_per_row,neuron_dist)
+    Whh = sparse_nzpr_esn_reservoir(hidden_size, spectral_radius, nonzeros_per_row,neuron_dist,dtype)
 
-    Whh = Whh.tocoo()
+    Whh = Whh.tocsr()
     bh  = np.random.uniform(-1, 1, (hidden_size,))
-    model = (map_ih,
-             ((Whh.data,
-              Whh.row,
-              Whh.col),
-             Whh.shape),
-             bh)
-    return model
 
-def generate_states_scipy(esncell, xs, h0):
+    return (map_ih, Whh, bh)
+
+def forward_prop(h,x,Whh,Win):
+    """
+    Recurrent Neural Network Forward Propagation
+    Arguments:
+        h:       Initial hidden state
+        x:       Driving input
+        Whh:     Square (sparse) hidden-to-hidden matrix
+
+        Win: Function like `esn_dev.input_map.InputMap` 
+                 to transform x to Nhidden = Whh.shape[0]
+
+    Returns:
+        h:
+    
+    """
+    
+    return np.tanh(Whh.dot(h) + Win(x))
+
+def evolve_hidden(esncell, xs, h,mode=None):
+    """
+    Apply and ESN defined by esncell (as in created from `sparse_esncell`) to
+    each input in xs with the initial state h. Each new input uses the updated
+    state from the previous step.
+    Arguments:
+        esncell: An ESN tuple (Wih, Whh, bh)
+        xs: Array of inputs. Time in first dimension, unless single sample
+        h: Initial hidden state
+        mode: evolution setting: 'transient', 'train' or 'predict' 
+    Returns:
+        h: Final hidden state (for modes 'predict' or 'transient')
+        or
+        H: All hidden states (for mode 'train')
+    """
+    dtype=xs.dtype
+    (map_ih, Whh, bh) = esncell[:3]
+    
+    if mode == 'predict':
+        # returns only last hidden state
+        h = forward_prop(h=h,x=xs,Whh=Whh,Win=map_ih)
+        return h
+
+    # number of time steps
+    if xs.ndim == 2:
+        #assume one 2D-sample
+        if mode!='predict':
+            print("Single sample received. Using mode 'predict'")
+            mode = 'predict'
+            evolve_hidden(esncell, xs, h, mode)
+            
+    elif xs.ndim == 3:
+        T = xs.shape[0]
+    
+    if mode=='transient':
+        # returns only last hidden state
+        for t in range(T):
+            h = forward_prop(h=h,x=xs[t],Whh=Whh,Win=map_ih)
+        return h
+
+    
+    # Dimension of hidden state
+    Nhidden = Whh.shape[0]
+
+    elif mode == 'train':
+        H = np.zeros([T,Nhidden],dtype=dtype)
+        H[0,:] =  forward_prop(h=h,x=xs[0],Whh=Whh,Win=map_ih)
+
+        
+        for t in range(1,T):
+            H[t,:] = forward_prop(h=H[t-1,:],x=xs[t],Whh=Whh,Win=map_ih)
+        
+        return H
+        
+    else:
+        print("Evolution mode should be 'transient', 'train' or 'predict'" )
+        return
+        
+
+def generate_states(esncell, xs, h0):
     """
     Apply and ESN defined by esncell (as in created from `sparse_esncell`) to
     each input in xs with the initial state h0. Each new input uses the updated
@@ -51,12 +124,12 @@ def generate_states_scipy(esncell, xs, h0):
     Returns:
         (h,hs) where
         h: Final hidden state
-        hs: All hidden states
+        H: All hidden states
     """
-    print("USING SCIPY")
+    dtype=xs[0].dtype
     (map_ih, (Whh, shape), bh) = esncell
-    Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float64).tocsr()
-    H = np.zeros([xs.shape[0],shape[0]],dtype=np.float64)
+    Whh = coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=dtype).tocsr()
+    H = np.zeros([xs.shape[0],shape[0]],dtype=dtype)
     print(f'map dtype {map_ih(xs[0]).dtype}')
     print(type(map_ih(xs[0])))
     H[0,:] = np.tanh((Whh.dot(h0))  + map_ih(xs[0]))
@@ -70,7 +143,7 @@ def generate_states_scipy(esncell, xs, h0):
     return (h0, H)
 
 
-def train(esncell, states, labels):
+def optimize(esncell, states, labels):
     """Compute the output matrix via least squares. and add it to the esncell
     tuple to create a model tuple.
 
@@ -106,6 +179,110 @@ def train_imed(esncell, states, inputs, labels, sigma=1.):
     Who = imed_lstsq_stable(states, inputs, labels, sigma)
     return esncell + (Who,)
 
+def dimension_reduce(h,pca_object=None,PCs = None):
+    """
+    Function to fit-transform or transform if already fitted
+    
+    Params:
+        h: single hidden state or state matrix (H)
+        pca_object: already-fitted PCA transform or None
+                    if not yet fitted
+    Returns: 
+        if pca_object is None:
+            H_r: dimension-reduced hidden state matrix
+            pca_object: trained transform object
+        else:
+            h_r: dimension-reduced hidden state
+    """
+    
+    if pca_object is None:
+        print('Training PCA')
+        # Fit the pca_object. PCs must be specified (int)
+        H=h
+        pca_object = PCA(n_components=PCs+1)
+        pca_object.fit(H)
+        H_r = pca_object.transform(H)
+        #keep a bias term
+        H_r[:,-1] = 1. 
+        
+        return H_r, pca_object
+    
+    else:
+        #transform the hidden state(s)
+        if h.ndim == 1:
+            h = h.reshape(1, -1)
+            h_r = pca_object.transform(h)
+            #single state
+            h_r = h_r.reshape(-1)
+            #keep a bias term
+            h_r[-1] = 1.
+        elif h.ndim == 2:
+            h_r = pca_object.transform(h)
+            #several states
+            h_r[:,-1] = 1. 
+        return h_r
+
+def readout(h,Who,pca_object=None):
+    """
+    Given a trained output matrix Who, transform
+    hidden state h to output y
+          
+    Params:
+        h: single hidden state or state matrix (H)
+        Who: fitted output matrix such that y=Who.h
+        pca_object: already-fitted PCA transform if using
+                    if None: No dimension reduction.
+    Returns: 
+        y: output
+    """
+    
+    # dimension-reduce
+    if pca_object is not None:
+        
+        h = dimension_reduce(h,pca_object)
+    
+    return Who.dot(h)
+
+
+def predict(model, y0, h0, Npred, pca_object=None):
+    """
+    Given a trained model = (Wih,Whh,bh,Who), a start internal state h0, and input
+    y0 predict in free-running mode for Npred steps into the future, with
+    output feeding back y_n as next input:
+
+      h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
+      y_{n+1} = Who h_{n+1}
+      
+      
+    Params:
+        model: complete trained model (map_ih,Whh,bh,Who)
+        y0: last 2D target from training set
+        h0: last hidden state from training mode
+        Npred: Number of free-running predictions to make
+        Who: fitted output matrix such that y=Who.h
+        pca_object: already-fitted PCA transform if using
+                    if None: No dimension reduction.
+    Returns: 
+        Y: sequence of 2D outputs (Npred,y.shape[0].y.shape[1])
+    """
+    dtype=y0.dtype
+    (map_ih,Whh,bh,Who) = model
+    #infer number of stacked inputs and number of bias parameters in h0
+    
+    assert(y0.ndim == 2)
+    
+    Y  = np.zeros([Npred,y0.size],dtype=dtype)
+    h  = evolve_hidden(model, y0, h0,mode='predict')
+    Y[0] = readout(h,Who,pca_object)
+    for t in range(1,Npred):
+        y = Y[t-1].reshape(y0.shape)
+        h    = evolve_hidden(model,y,h,mode='predict')
+        Y[t] = readout(h,Who,pca_object)
+
+    Y = Y.reshape((Npred,y0.shape[0],y0.shape[1]))
+
+    return Y
+
 
 def predict_scipy(model, y0, h0, Npred,return_H=True):
     print('PREDICT SCIPY')
@@ -123,15 +300,17 @@ def predict_scipy(model, y0, h0, Npred,return_H=True):
         aug_len = y0.shape[0] * y0.shape[1] + 1
     else:
         raise ValueError("'y0' must either be a vector or a matrix.")
-        
+    
+    dtype=y0.dtype
+    
     if return_H == False:
         print('Not returning H when predicting')
         (map_ih,(Whh,shape),bh,Who) = model
-        Who = np.array(Who,dtype=np.float32)
-        Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()    
-        h = np.zeros([aug_len+shape[0]],dtype=np.float64)
+        Who = np.array(Who,dtype=dtype)
+        Whh = coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=dtype).tocsr()    
+        h = np.zeros([aug_len+shape[0]],dtype=dtype)
         h[0] = 1.
-        Y = np.zeros([Npred,y0.size])
+        Y = np.zeros([Npred,y0.size],dtype=dtype)
 
         #first run
         y = y0
@@ -149,7 +328,7 @@ def predict_scipy(model, y0, h0, Npred,return_H=True):
         return Y
     
 def predict_reduced_sklearn(model, y0, h0, Npred,pca_object,return_H=True):
-    print('PREDICT REDUCED')
+    print('PREDICT REDUCED SKLEARN')
     """
     Given a trained model = (Wih,Whh,bh,Who), a start internal state h0, and input
     y0 predict in free-running mode for Npred steps into the future, with
@@ -158,9 +337,9 @@ def predict_reduced_sklearn(model, y0, h0, Npred,pca_object,return_H=True):
       h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
       y_{n+1} = Who h_{n+1}
     """
-    (map_ih,(Whh,shape),bh,Who) = model
-    Who = np.array(Who,dtype=np.float64)
-    Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float64).tocsr()    
+    dtype=y0.dtype
+    (map_ih,Whh,bh,Who) = model
+    Whh = Whh.tocsr()
     #infer number of stacked inputs and number of bias parameters in h0
     
     Nhidden = map_ih(y0).shape[0]
@@ -189,7 +368,7 @@ def predict_reduced_sklearn(model, y0, h0, Npred,pca_object,return_H=True):
     if return_H == False:
         print('Not returning H when predicting')
         h = np.array(h0)
-        Y = np.zeros([Npred+stacks,y0.size])
+        Y = np.zeros([Npred+stacks,y0.size],dtype=dtype)
         for s in range(stacks-1):
             Y[s] = h0[Nbias+input_size*(s+1):Nbias+input_size*(s+2)]
         Y[stacks-1] = y0.reshape(-1)
@@ -197,8 +376,6 @@ def predict_reduced_sklearn(model, y0, h0, Npred,pca_object,return_H=True):
         for i in range(stacks,stacks+Npred):
             y = Y[i-1]
 
-            Whh.dot(h[aug_len:])
-            map_ih(y.reshape(y0.shape))
             h[aug_len:] = np.tanh(Whh.dot(h[aug_len:]) + map_ih(y.reshape(y0.shape)))
             #print(f'In Y is there nan at i={i-1}? {np.isnan(Y[i-1]).all()}')
             
@@ -208,6 +385,7 @@ def predict_reduced_sklearn(model, y0, h0, Npred,pca_object,return_H=True):
            
             #reduced h
             h_r = np.squeeze( pca_object.transform(h.reshape(1,-1)) )
+            h_r[-1] = 1
            
             Y[i,:] = Who.dot(h_r)
     
@@ -217,11 +395,11 @@ def predict_reduced_sklearn(model, y0, h0, Npred,pca_object,return_H=True):
     
     else:
         (map_ih,(Whh,shape),bh,Who) = model
-        Who = np.array(Who,dtype=np.float32)
-        Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()    
-        H = np.zeros([Npred,aug_len+shape[0]],dtype=np.float32)
+        Who = np.array(Who,dtype=dtype)
+        Whh = coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=dtype).tocsr()    
+        H = np.zeros([Npred,aug_len+shape[0]],dtype=dtype)
         H[:,0] = 1.
-        Y = np.zeros([Npred,y0.size],dtype=np.float32)
+        Y = np.zeros([Npred,y0.size],dtype=dtype)
         #first run
         y = y0
         h = h0[aug_len:]
@@ -251,12 +429,13 @@ def predict_reduced(model, y0, h0, Npred,v,mean,return_H=True):
       h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
       y_{n+1} = Who h_{n+1}
     """
+    dtype = y0.dtype
     (map_ih,(Whh,shape),bh,Who) = model
-    Who = np.array(Who,dtype=np.float64)
-    Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float64).tocsr()    
+    Who = np.array(Who,dtype=dtype)
+    Whh = coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=dtype).tocsr()    
     #infer number of stacked inputs and number of bias parameters in h0
     
-    Nhidden = map_ih(y0).shape[0]
+    Nhidden = len(h0)
     max_stacks = 6
     max_Nbias  = 1
     for Nbias in range(max_Nbias+1):
@@ -270,7 +449,6 @@ def predict_reduced(model, y0, h0, Npred,v,mean,return_H=True):
         # Inner loop was broken, break the outer.
         break
 
-   
     input_size = y0.size
     if y0.ndim == 1:
         aug_len = y0.shape[0]*stacks + Nbias
@@ -282,7 +460,7 @@ def predict_reduced(model, y0, h0, Npred,v,mean,return_H=True):
     if return_H == False:
         print('Not returning H when predicting')
         h = np.array(h0)+mean
-        Y = np.zeros([Npred+stacks,y0.size])
+        Y = np.zeros([Npred+stacks,y0.size],dtype=dtype)
         for s in range(stacks-1):
             Y[s] = h0[Nbias+input_size*(s+1):Nbias+input_size*(s+2)]
         Y[stacks-1] = y0.reshape(-1)
@@ -311,10 +489,10 @@ def predict_reduced(model, y0, h0, Npred,v,mean,return_H=True):
     else:
         (map_ih,(Whh,shape),bh,Who) = model
         Who = np.array(Who,dtype=np.float32)
-        Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()    
-        H = np.zeros([Npred,aug_len+shape[0]],dtype=np.float32)
+        Whh = coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()    
+        H = np.zeros([Npred,aug_len+shape[0]],dtype=dtype)
         H[:,0] = 1.
-        Y = np.zeros([Npred,y0.size],dtype=np.float32)
+        Y = np.zeros([Npred,y0.size],dtype=dtype)
         #first run
         y = y0
         h = h0[aug_len:]
@@ -343,9 +521,10 @@ def predict_scipy_stack(model, y0, h0, Npred,return_H=False,v=False):
       h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
       y_{n+1} = Who h_{n+1}
     """
+    dtype=y0.dtype
     (map_ih,(Whh,shape),bh,Who) = model
-    Who = np.array(Who,dtype=np.float64)
-    Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float64).tocsr()    
+    Who = np.array(Who,dtype=dtype)
+    Whh = coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=dtype).tocsr()    
     #infer number of stacked inputs and number of bias parameters in h0
     
     Nhidden = map_ih(y0).shape[0]
@@ -374,7 +553,7 @@ def predict_scipy_stack(model, y0, h0, Npred,return_H=False,v=False):
     if return_H == False:
         print('Not returning H when predicting')
         h = np.array(h0)
-        Y = np.zeros([Npred+stacks,y0.size])
+        Y = np.zeros([Npred+stacks,y0.size],dtype=dtype)
         for s in range(stacks-1):
             Y[s] = h0[Nbias+input_size*(s+1):Nbias+input_size*(s+2)]
         Y[stacks-1] = y0.reshape(-1)
@@ -399,11 +578,11 @@ def predict_scipy_stack(model, y0, h0, Npred,return_H=False,v=False):
     
     else:
         (map_ih,(Whh,shape),bh,Who) = model
-        Who = np.array(Who,dtype=np.float32)
-        Whh = sparse.coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=np.float32).tocsr()    
-        H = np.zeros([Npred,aug_len+shape[0]],dtype=np.float32)
+        Who = np.array(Who,dtype=dtype)
+        Whh = coo_matrix((Whh[0], (Whh[1], Whh[2])), shape=shape,dtype=dtype).tocsr()    
+        H = np.zeros([Npred,aug_len+shape[0]],dtype=dtype)
         H[:,0] = 1.
-        Y = np.zeros([Npred,y0.size],dtype=np.float32)
+        Y = np.zeros([Npred,y0.size],dtype=dtype)
         #first run
         y = y0
         h = h0[aug_len:]
@@ -422,16 +601,6 @@ def predict_scipy_stack(model, y0, h0, Npred,return_H=False,v=False):
 
         return ((ys[-1,:],H[-1,:]), (Y,H))
 
-def warmup_predict(model, imgs, Npred):
-    """
-    Given a trained ESN and a number input images 'imgs', predicts 'Npred'
-    frames after the last frame of 'imgs'. The input images are used to
-    create the inital state 'h0' for the prediction (warmup).
-    """
-    H = augmented_state_matrix(model[:-1], imgs, 0)
-    h0 = H[-2]
-    y0 = imgs[-1]
-    return predict(model, y0, h0, Npred)
 
 
 def hidden_size(esn_dev):
@@ -439,12 +608,13 @@ def hidden_size(esn_dev):
     return shape[0]
 
 
-def augmented_state_matrix_stack(esncell, inputs, Ntrans):
+def augmented_state_matrix_stack(esncell, inputs, Ntrans,h0=None):
     Ntrain = inputs.shape[0]
+    dtype = inputs.dtype
+    if h0 is None:
+        h0 = np.zeros(hidden_size(esncell),dtype=dtype)
 
-    h0 = np.zeros(hidden_size(esncell))
-
-    (_,H) = generate_states_scipy(esncell, inputs, h0)
+    H = evolve_hidden(esncell, inputs, h0,state='train')
     print(f'H has shape')
     
     input_shape_spatial = int(np.prod(inputs.shape[1:]))
@@ -470,14 +640,14 @@ def augmented_state_matrix_stack(esncell, inputs, Ntrans):
 
 
 
-def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row,neuron_dist):
+def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row,neuron_dist,dtype=None):
     print(f'Using {nonzeros_per_row} nonzeros per row and {neuron_dist} distribution')
-    #random number generator
-    """seed = np.random.get_state()[1][0]
-    # Note I am using seed here
-    rng = np.random.default_rng(seed)"""
     
-    # values that must be sampled
+    #Use current random state as seed
+    seed = np.random.get_state()[1][0]
+    rng = np.random.default_rng(seed)
+    
+    # number of values in sparse matrix
     nr_values = dim * nonzeros_per_row
     
     if not (neuron_dist=='uniform' or neuron_dist=='normal'):
@@ -500,10 +670,12 @@ def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row,neuron_dist
         #pick 0-symmetric interval
         high = np.sqrt(3*var)
         low  = -high
+        
         dist_args = dict(
             high=high,
             low=low,
-            size=[nr_values])
+            size=[nr_values],
+        )
         
     elif neuron_dist == 'normal':
         dist_gen = np.random.normal
@@ -521,7 +693,6 @@ def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row,neuron_dist
             scale=np.sqrt(var),
             size=[nr_values])
     
-    rng = np.random.default_rng()
     dense_shape = (dim, dim)
 
     # get row_idx like: [0,0,0,1,1,1,....]
@@ -534,22 +705,23 @@ def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row,neuron_dist
         cols = tuple(rng.choice(dim, size=nonzeros_per_row, replace=False))
         col_idx += (cols)
     col_idx = np.asarray(col_idx)
-    vals = dist_gen(**dist_args)
+    vals = dist_gen(**dist_args,)
     
     # scipy sparse matrix
-    matrix = sparse.coo_matrix((vals, (row_idx, col_idx)),shape=dense_shape)
+    matrix = coo_matrix((vals, (row_idx, col_idx)),shape=dense_shape,dtype=dtype)
 
     # matrix now has approximate spectral radius
     # if low-dim, do manual calc:
     if dim <= 5000:
 
-        eig_max = sparse.linalg.eigs(
+        eig_max = eigs(
             matrix, 
             k=1, 
             tol=0,
             return_eigenvectors=False,
             which='LM',
             ncv=200,
+            v0 = np.ones(dim)
             )
         
         rho = np.abs(eig_max)
@@ -557,31 +729,3 @@ def sparse_nzpr_esn_reservoir(dim, spectral_radius, nonzeros_per_row,neuron_dist
     
     return matrix
 
-
-"""def device_put(model_or_cell):
-    if len(model_or_cell) == 3:
-        moc = _device_put_cell(model_or_cell)
-    elif len(model_or_cell) == 4:
-        moc = _device_put_model(model_or_cell)
-    return moc
-
-
-def _device_put_cell(cell):
-    (mapih, (Whh,shape), bh) = cell
-    mapih.device_put()
-    Whh = jax.device_put(Whh)
-    bh  = jax.device_put(bh)
-    return (mapih, (Whh,shape), bh)
-
-
-def _device_put_model(model):
-    cell = model[:3]
-    Who  = jax.device_put(model[3])
-    return _device_put_cell(cell) + (Who,)
-
-
-def load_model(filename):
-    with open(filename, "rb") as fi:
-        m = joblib.load(fi)
-    return device_put(m)
-"""

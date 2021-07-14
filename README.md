@@ -1,4 +1,4 @@
-![Python application](https://github.com/nmheim/esn/workflows/Python%20application/badge.svg)
+![Python application](https://github.com/nmheim/esn_dev.workflows/Python%20application/badge.svg)
 
 # Echo State Networks in JAX!
 

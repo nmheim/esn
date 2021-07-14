@@ -2,25 +2,27 @@ import numpy as np
 from esn_dev.utils import normalize
 
 
-def gauss2d_sequence(centers=None, sigma=0.5, size=[20, 20], borders=[[-2, 2], [-2, 2]]):
+def gauss2d_sequence(centers=None, sigma=0.5, N=1000, size=[20, 20], borders=[[-2, 2], [-2, 2]],dtype=None):
     """Creates a moving gaussian blob on grid with `size`"""
     if centers is None:
         # t = np.arange(0,500*np.pi,0.1)
         # x = np.sin(t)
         # y = np.cos(0.25*t)
-        t = np.arange(0, 200 * np.pi, 0.02 * np.pi)
-        x, y = np.sin(0.3 * t), np.cos(t)
+        #t = np.arange(0, 200 * np.pi, 0.02 * np.pi)
+        t = np.linspace(0, 200 * np.pi, N,dtype=dtype)
+
+        x, y = np.sin(0.3 * t), np.cos(t,dtype=None)
         centers = np.array([y, x]).T
 
     yc, xc = centers[:, 0], centers[:, 1]
-    yy = np.linspace(borders[0][0], borders[0][1], size[0])
-    xx = np.linspace(borders[1][0], borders[1][1], size[1])
+    yy = np.linspace(borders[0][0], borders[0][1], size[0],dtype=dtype)
+    xx = np.linspace(borders[1][0], borders[1][1], size[1],dtype=dtype)
 
     xx = xx[None, :, None] - xc[:, None, None]
     yy = yy[None, None, :] - yc[:, None, None]
 
     gauss = (xx**2 + yy**2) / (2 * sigma**2)
-    return np.exp(-gauss)
+    return np.exp(-gauss,dtype=dtype)
 
 
 def square_sequence(toplefts=None, square_size=(3,3), size=(20,20), borders=[[-2, 2], [-2, 2]]):
@@ -42,13 +44,13 @@ def square_sequence(toplefts=None, square_size=(3,3), size=(20,20), borders=[[-2
     return seq
 
 
-def mackey2d_sequence(N=5000, b=None, sigma=0.5, size=[20,20], borders=[[-2, 2], [-2, 2]]):
+def mackey2d_sequence(N=5000, b=None, sigma=0.5, size=[20,20], borders=[[-2, 2], [-2, 2]],dtype=None):
     T = N*0.1
-    t = np.arange(0, T, 0.1)
+    t = np.arange(0, T, 0.1,dtype=dtype)
     x = normalize(mackey_sequence(b=b, N=N)) * 2 - 1
-    y = np.cos(t)
+    y = np.cos(t,dtype=dtype)
     centers = np.array([y,x]).T
-    return gauss2d_sequence(centers, sigma=sigma, size=size, borders=borders)
+    return gauss2d_sequence(centers, sigma=sigma, size=size, borders=borders,dtype=dtype)
 
 
 def mackey_sequence(b=None, N=3000):

@@ -2,18 +2,17 @@
 
 from setuptools import setup, find_packages
 
-setup(name="esn",
+setup(name="esn_dev",
     version="0.1",
-    description="Echo State Networks",
-    author="Niklas Heim",
+    description="Scalable Echo State Networks",
+    author="Jacob Ungar Felding / Niklas Heim",
     packages=find_packages(),
     install_requires=[
-        "jax",
-        "jaxlib",
         "joblib",
         "matplotlib",
         "numpy",
         "scipy",
+        "sklearn"
     ],
     extras_require={
         "test":["pytest","pytest-cov"]

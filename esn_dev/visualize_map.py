@@ -1,8 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from esn_dev.jaxsparse import sp_dot
 from esn_dev.input_map import RandWeightsOp
-import esn_dev.sparse_esn_dev.as se
+import esn_dev.sparse_esn_dev as se
 
 
 NRPLOTS_TO_FIGSIZE = {
@@ -34,15 +33,15 @@ def vec_to_rect(vec):
     rect = np.concatenate([vec, pad], axis=0).reshape(shape)
     return rect
 
-def plot_input_map(esn_dev. img, h0):
+def plot_input_map(esn_dev, img, h0):
     (map_ih, (Whh,_), bh) = esn
-    hidden_size = se.hidden_size(esn_dev.
+    hidden_size = se.hidden_size(esn_dev)
     # new state
-    h1 = np.array(se.generate_states(esn_dev. img.reshape(1,*img.shape), h0)[0])
+    h1 = np.array(se.generate_states(esn_dev, img.reshape(1,*img.shape), h0)[0])
     # all input maps concat'ed
     ih = np.array(map_ih(img))
     # hidden to hidden
-    hh = np.array(sp_dot(Whh, h0, hidden_size))
+    hh = Whh.dot(h0)
 
     img = np.array(img)
     h0 = np.array(h0)

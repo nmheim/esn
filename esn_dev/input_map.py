@@ -96,7 +96,7 @@ class InputMap(Operation):
             raise ValueError("'xs' must either be a list of 'ScaleOp's or 'dict's!")
 
     def __call__(self, img):
-        return np.concatenate([op(img) for op in self.ops], axis=0)
+        return np.concatenate([op(img) for op in self.ops], axis=0,dtype=img.dtype)
 
     def output_size(self, input_shape):
         return sum([op.output_size(input_shape) for op in self.ops])
@@ -110,8 +110,7 @@ class PixelsOp(Operation):
         with Image.fromarray(img) as im:
             im_resized = im.resize(self.size,resample=Image.BILINEAR)
         
-        return np.asarray(im_resized).reshape(-1) #(img, self.size, "bilinear").reshape(-1)
-
+        return np.asarray(im_resized,dtype=img.dtype).reshape(-1)
     
 
     def output_size(self, input_shape):
@@ -158,7 +157,7 @@ class ScaleOp(Operation):
 class GradientOp(Operation):
     def __call__(self, img):
         x = np.gradient(img)
-        x = np.concatenate(x).reshape(-1)
+        x = np.concatenate(x,dtype=img.dtype).reshape(-1)
         return normalize(x)*2-1
 
     def output_size(self, input_shape):
