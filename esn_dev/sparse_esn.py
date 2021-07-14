@@ -35,7 +35,7 @@ def esncell(map_ih, hidden_size, spectral_radius=1.5, neuron_connections=10, neu
 
     return (map_ih, Whh, bh)
 
-def forward_prop(h,x,Whh,Win):
+def fwd_prop(h,x,Whh,Win):
     """
     Recurrent Neural Network Forward Propagation
     Arguments:
@@ -73,7 +73,7 @@ def evolve_hidden(esncell, xs, h,mode=None):
     
     if mode == 'predict':
         # returns only last hidden state
-        h = forward_prop(h=h,x=xs,Whh=Whh,Win=map_ih)
+        h = fwd_prop(h=h,x=xs,Whh=Whh,Win=map_ih)
         return h
 
     # number of time steps
@@ -90,20 +90,20 @@ def evolve_hidden(esncell, xs, h,mode=None):
     if mode=='transient':
         # returns only last hidden state
         for t in range(T):
-            h = forward_prop(h=h,x=xs[t],Whh=Whh,Win=map_ih)
+            h = fwd_prop(h=h,x=xs[t],Whh=Whh,Win=map_ih)
         return h
 
-    
-    # Dimension of hidden state
-    Nhidden = Whh.shape[0]
-
     elif mode == 'train':
+            
+        # Dimension of hidden state
+        Nhidden = Whh.shape[0]
+
         H = np.zeros([T,Nhidden],dtype=dtype)
-        H[0,:] =  forward_prop(h=h,x=xs[0],Whh=Whh,Win=map_ih)
+        H[0,:] =  fwd_prop(h=h,x=xs[0],Whh=Whh,Win=map_ih)
 
         
         for t in range(1,T):
-            H[t,:] = forward_prop(h=H[t-1,:],x=xs[t],Whh=Whh,Win=map_ih)
+            H[t,:] = fwd_prop(h=H[t-1,:],x=xs[t],Whh=Whh,Win=map_ih)
         
         return H
         
