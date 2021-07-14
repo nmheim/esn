@@ -1,8 +1,8 @@
 import numpy as np
-import gc #garbage collector
 import scipy
+from scipy.linalg import lstsq
 
-def create_readout_matrix(dynsys, H, targets):
+def create_readout_matrix(dynsys, H, targets,method='scipy'):
     """
     Compute the output matrix `Who` via least squares. 
     and add it to the dynsys tuple to create a model tuple.
@@ -18,91 +18,46 @@ def create_readout_matrix(dynsys, H, targets):
         (mapih, Whh, bh, Who): dynsys + Who tuple
     
     """
-    
-    Who = lstsq_stable(states, targets)
+    if method == 'scipy':
+        Who = lstsq_scipy(H,targets,thresh=1e-10)
+    else:
+        Who = lstsq_svd(H, targets)
     
     return dynsys + (Who,)
 
 def lstsq_svd(H, targets, thresh=1e-4):
-    """    if targets.ndim != 2:
-        raise ValueError("Targets must have shape (time, features)")
-    
-    print('Doing svd')
-    U, s, Vh = scipy.linalg.svd(H.T, full_matrices=False)
-    scale = s[0]
-    n = np.sum(np.abs(s/scale) > thresh)  # Ensure condition number less than 1/thresh
-    
-    L = targets.T
-    v = Vh[:n, :].T
-    uh = U[:, :n].T
-    
-    print(f'H takes up {H.nbytes*1e-9}GB with shape {H.shape}, dtype {H.dtype}')
-    print(f'U takes up {U.nbytes*1e-9}GB with shape {U.shape}, dtype {U.dtype}')
-    print(f'Vh takes up {Vh.nbytes*1e-9}GB with shape {Vh.shape}, dtype {Vh.dtype}')
-    #del U #H and U are both of size 
-    del H
-    gc.collect()
-    print('deleted H, U')
-    Who =  np.dot(np.dot(L, v) / s[:n], uh) 
-    #alpha = s[0]*0.001
-    #print(f'Tikhonov with parameter {alpha}, largest Singualar value: {s[0]:.3e}')
-    #Who =  np.dot(s*np.dot(L, Vh.T) / (alpha +s**2), U.T)"""
-    
+
     if targets.ndim != 2:
         raise ValueError("targets must have shape (time, features)")
     
-    print('Doing svd')
+    # Reduced SVD
     U, s, Vh = scipy.linalg.svd(H, full_matrices=False)
-    scale = s[0]
-    n = np.sum(np.abs(s/scale) > thresh)  # Ensure condition number less than 1/thresh
     
-    L = targets
+    # largest singular value
+    scale = s[0]
+    
+    # Ensure condition number less than 1/thresh
+    n = np.sum(np.abs(s/scale) > thresh)  
+    
     v = Vh[:n, :]
     uh = U[:, :n]
+
+    Who =  np.dot(np.dot(targets.T, uh) / s[:n], v) 
     
-    print(f'H takes up {H.nbytes*1e-9}GB with shape {H.shape}, dtype {H.dtype}')
-    print(f'U takes up {U.nbytes*1e-9}GB with shape {U.shape}, dtype {U.dtype}')
-    print(f'Vh takes up {Vh.nbytes*1e-9}GB with shape {Vh.shape}, dtype {Vh.dtype}')
-    #del U #H and U are both of size 
-    del H
-    gc.collect()
-    print('deleted H, U')
-    print(f'targets have shape {L.shape}')
-    Who =  np.dot(np.dot(L.T, uh) / s[:n], v) 
     #alpha = s[0]*0.001
     #print(f'Tikhonov with parameter {alpha}, largest Singualar value: {s[0]:.3e}')
     #Who =  np.dot(s*np.dot(L, Vh.T) / (alpha +s**2), U.T)
-
     return Who
 
-def lstsq_pcr(H, targets, thresh=1e-4):
-    global Vh
 
-    if targets.ndim != 2:
-        raise ValueError("targets must have shape (time, features)")
-    print('Doing svd')
-    U, s, Vh = scipy.linalg.svd(H, full_matrices=False)
-    scale = s[0]
-    n = np.sum(np.abs(s/scale) > thresh)  # Ensure condition number less than 1/thresh
+def lstsq_scipy(H, targets, thresh=1e-10):
+    """
+    Note: thresh is minimal value of singular value. I.e. not relative
+    to largest sv as in lstsq_svd.
+    """
+    Who, residues, rank, s = lstsq(H, targets, cond=thresh)
+    print(f'Training MSE: {residues.mean():.2e}')
     
-   
-    #Reduced data matrix
-    H_r = H.dot(Vh.T)
-    print(f'H has shape {H.shape}')
-    print(f'H_r has shape {H_r.shape}')
+    return Who.T
     
-    
-    U, s, Vh = scipy.linalg.svd(H_r.T, full_matrices=False)
-    scale = s[0]
-    n = np.sum(np.abs(s/scale) > thresh)  # Ensure condition number less than 1/thresh
-    
-    L = targets.T
-    v = Vh[:n, :].T
-    uh = U[:, :n].T  
 
-    
-    print('deleted H, U')
-    #Who =  np.dot(np.dot(L, v) / s[:n], uh) 
-    Who =  np.dot(np.dot(L, v) / s[:n], uh) 
-   
-    return Who

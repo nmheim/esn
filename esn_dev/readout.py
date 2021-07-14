@@ -1,5 +1,5 @@
 import numpy as np
-from esn_dev.hidden import evolve_hidden, dimension_reduce
+from esn_dev.hidden import evolve_hidden_state, dimension_reduce
 from sklearn.decomposition import KernelPCA, PCA
 
 def lin_readout(h,Who,pca_object=None):
@@ -62,3 +62,4 @@ def predict(model, y0, h0, Npred, pca_object=None):
     Y = Y.reshape((Npred,y0.shape[0],y0.shape[1]))
 
     return Y
+

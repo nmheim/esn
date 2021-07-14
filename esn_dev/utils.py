@@ -118,3 +118,35 @@ def preprocess(data,a,b,mi=None, ma=None, sigma=(0,2,2), eps=0.01,ST_method='DCT
         # Appropriate for val/test set
         data = scale(data,a,b,mi,ma,inverse)
         return data
+    
+    
+def score(predictions, targets):
+    """
+    MSE of predictions and targets.
+    If targets and predictions are standardizing transformed,
+    the MSE is equal to the IMED    
+    
+    Returns:
+        MSE: (float). Single MSE over all time steps
+    """
+    
+    MSE = np.square(predictions-targets).mean()
+    
+    return MSE
+    
+def score_over_time(predictions, targets):
+    """
+    MSE of predictions and targets.
+    If targets and predictions are standardizing transformed,
+    the MSE is equal to the IMED.    
+    
+    Params:
+    ...    assumes predictions, targets have shape (T,W,H)
+    
+    Returns:
+        MSEs: (ndarray). MSE for each time step
+    """
+    
+    MSEs = np.square(predictions-targets).mean(axis=1).mean(axis=1)
+    
+    return MSEs

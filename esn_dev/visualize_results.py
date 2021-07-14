@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from numpy import save, load, nan, arange, mean
 import matplotlib.animation as animation
+from esn_dev.utils import score_over_time
 
 def animate_comparison(targets,predictions,kuro=True,filepath='comparison.mp4',fps=24,dpi=150, v=(None,None)):
     if v[0] is None:
@@ -104,8 +105,7 @@ def animate_this(anim_data, filepath='animation.mp4',fps=24,dpi=150):
 
 
 def MSE_over_time(targets,predictions,subplot_kw=None):
-    SE = (targets-predictions)**2
-    MSE_over_time = SE.mean(axis=1).mean(axis=1)
+    MSE_over_time = score_over_time(predictions,targets)
     fig, ax = plt.subplots(
         nrows=1,
         ncols=1,
