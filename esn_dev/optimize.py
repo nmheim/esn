@@ -1,8 +1,9 @@
 import numpy as np
 import scipy
 from scipy.linalg import lstsq
+import statsmodels.api as sm
 
-def create_readout_matrix(dynsys, H, targets,method='scipy'):
+def create_readout_matrix(dynsys, H, targets,method='svd'):
     """
     Compute the output matrix `Who` via least squares. 
     and add it to the dynsys tuple to create a model tuple.
@@ -56,8 +57,9 @@ def lstsq_scipy(H, targets, thresh=1e-10):
     to largest sv as in lstsq_svd.
     """
     Who, residues, rank, s = lstsq(H, targets, cond=thresh)
+    print(f'lstsq thresh {thresh}')
     print(f'Training MSE: {residues.mean():.2e}')
+    print(f'Rank: {rank}')
     
     return Who.T
     
-

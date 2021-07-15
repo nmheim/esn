@@ -3,7 +3,7 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import eigs
 
 #from esn_dev.jaxsparse import sp_dot
-from sklearn.decomposition import KernelPCA, PCA
+from sklearn.decomposition import KernelPCA as PCA
 
 def initialize_dynsys(map_ih, hidden_size, spectral_radius=1.5, neuron_connections=10, neuron_dist='uniform',dtype=None):
     """
@@ -43,7 +43,7 @@ def initialize_dynsys(map_ih, hidden_size, spectral_radius=1.5, neuron_connectio
 
     return (map_ih, Whh, bh)
 
-def evolve_hidden_state(dynsys, xs, h,mode=None):
+def evolve_hidden_state(dynsys, xs, h, mode=None):
     """
     Echo State Harvestor.
     Apply and ESN defined by dynsys (as in created from `initialize_dynsys`) to
@@ -73,7 +73,8 @@ def evolve_hidden_state(dynsys, xs, h,mode=None):
         if mode!='predict':
             print("Single sample received. Using mode 'predict'")
             mode = 'predict'
-            evolve_hidden_state(dynsys, xs, h, mode)
+            h = evolve_hidden_state(dynsys, xs, h, mode)
+            return h
             
     elif xs.ndim == 3:
         T = xs.shape[0]
@@ -256,13 +257,44 @@ def dimension_reduce(h,pca_object=None,PCs = None):
     
     if pca_object is None:
         
-        # Fit the pca_object. 
-        # PCs must be specified (int)
+        # Fit the pca_object.         
         H = h
+        
+        """if PCs is None or PCs > min(H.shape)-1:
+            PCs = min(H.shape)-1
+            print(f'Using {PCs} principal components')
+        
         pca_object = PCA(n_components=PCs+1)
-        H_r = pca_object.fit_transform(H)
+        H_r = pca_object.fit_transform(H)"""
+        
+        # mean should be subtracted
+        mean = H.mean(axis=0)
+        H -= mean[np.newaxis,:]
+        
+        from scipy.linalg import svd
+        _, s, V = svd(H, full_matrices=False)
+        #scale = s[0]
+        #import matplotlib.pyplot as plt
+        k = PCs
+        #Reduced data matrix
+        print(f'Using {k} principal components even though min(H.shape)={min(H.shape)}')
+        V = (V.T)[:,:k]
+        
+        #transform H
+        H_r = H.dot(V)
+
         #keep a bias term
         H_r[:,-1] = 1. 
+        
+        class pca(object):
+            def __init__(self,V,mean):
+                self.fit  = V
+                self.mean = mean
+            def transform(self,h):
+                
+                return (h-self.mean).dot(self.fit)
+        
+        pca_object=pca(V,mean)
         
         return H_r, pca_object
     
