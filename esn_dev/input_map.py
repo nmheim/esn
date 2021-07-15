@@ -1,6 +1,6 @@
 #from functools import partial
 import numpy as np
-from esn_dev.dct import dct2
+from scipy.fft import dctn
 from esn_dev.utils import _fromfile, normalize
 from PIL import Image 
 from scipy.signal import convolve
@@ -215,7 +215,11 @@ class DCTOp(Operation):
         self.size = size
 
     def __call__(self, img):
-        return dct2(img, *self.size).reshape(-1)
+        #Two dimensional discrete cosine transform
+        #of image. Keep first (nk1,nk2) components 
+        Fkk = dctn(img, type=2, workers=-1,norm='forward')
+        Fkk = Fkk[:self.size[0],:self.size[1]]
+        return Fkk.reshape(-1)
 
     def output_size(self, input_shape):
         return self.size[0] * self.size[1]
