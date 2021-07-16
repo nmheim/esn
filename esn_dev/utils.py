@@ -166,3 +166,12 @@ def score_over_time(predictions, targets):
     MSEs = np.square(predictions-targets).mean(axis=1).mean(axis=1)
     
     return MSEs
+
+
+import joblib
+def _fromfile(filename):
+    #used by input_map
+    with open(filename, "rb") as fi:
+        m = joblib.load(fi)
+    return m
+
