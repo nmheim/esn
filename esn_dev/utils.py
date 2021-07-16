@@ -1,4 +1,3 @@
-import joblib
 import numpy as np
 import os.path
 from os import path
@@ -34,13 +33,6 @@ def normalize(x, training_min=None, training_max=None,**kwargs):
     if training_min is None:
         training_min, training_max = x.min(), x.max()
     return (x - training_min) / (training_max-training_min)
-
-
-def _fromfile(filename):
-    with open(filename, "rb") as fi:
-        m = joblib.load(fi)
-        #m.device_put()
-    return m
 
 def save(targets, predictions,dict_of_arrays,param_dict=None,save_condition='if_better',savedir='tmp'):
     # save relevant parameters
