@@ -12,7 +12,9 @@ setup(name="esn_dev",
         "matplotlib",
         "numpy",
         "scipy",
-        "sklearn"
+        "sklearn",
+        "cmocean",
+        "IMED"
     ],
     extras_require={
         "test":["pytest","pytest-cov"]

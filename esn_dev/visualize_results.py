@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 from numpy import save, load, nan, arange, mean
 import matplotlib.animation as animation
 from esn_dev.utils import score_over_time
+import cmocean.cm as cmo
+
 
 def animate_comparison(targets,predictions,kuro=True,filepath='comparison.mp4',fps=24,dpi=150, v=(None,None)):
     if v[0] is None:
@@ -35,8 +37,8 @@ def animate_comparison(targets,predictions,kuro=True,filepath='comparison.mp4',f
 
     fig, (ax1,ax2) = plt.subplots(nrows=1, ncols=2,figsize=(8.5,4),dpi=dpi,sharey=True)
     fig.tight_layout()
-    im1 = ax1.imshow(targets[0,:,:],cmap='inferno',origin='lower',vmin=vmin,vmax=vmax)
-    im2 = ax2.imshow(predictions[0,:,:],cmap='inferno',origin='lower',vmin=vmin,vmax=vmax)
+    im1 = ax1.imshow(targets[0,:,:],cmap=cmo.deep_r,origin='lower',vmin=vmin,vmax=vmax)
+    im2 = ax2.imshow(predictions[0,:,:],cmap=cmo.deep_r,origin='lower',vmin=vmin,vmax=vmax)
     #[left, bottom, width, height] 
     cbar_ax = fig.add_axes([0.92, 0.235, 0.03, 0.58])
     fig.colorbar(im1, cax=cbar_ax)
@@ -81,7 +83,9 @@ def animate_this(anim_data, filepath='animation.mp4',fps=24,dpi=150):
         im.set_data(data_slice)
         return (im,)
     fig, ax = plt.subplots()
-    im = ax.imshow(anim_data[0,:,:],cmap='inferno',vmin=0,vmax=1)
+    vmin = anim_data.min()
+    vmax = anim_data.max()
+    im = ax.imshow(anim_data[0,:,:],cmap='inferno',vmin=vmin,vmax=vmax,origin='lower')
     plt.colorbar(im)
 
     # call the animator. blit=True means only re-draw the parts that have changed.

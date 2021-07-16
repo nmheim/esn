@@ -24,7 +24,7 @@ def lin_readout(h,Who,pca_object=None):
     return Who.dot(h)
 
 
-def predict(model, y0, h0, Npred, pca_object=None):
+def predict(model, y0, h0, pca_object=None, Npred=300,dtype=None):
     """
     Given a trained model = (Wih,Whh,bh,Who), a start internal state h0, and input
     y0 predict in free-running mode for Npred steps into the future, with
@@ -45,7 +45,6 @@ def predict(model, y0, h0, Npred, pca_object=None):
     Returns: 
         Y: sequence of 2D outputs (Npred,y.shape[0].y.shape[1])
     """
-    dtype=y0.dtype
     (map_ih,Whh,bh,Who) = model
     #infer number of stacked inputs and number of bias parameters in h0
     
