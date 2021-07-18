@@ -96,7 +96,7 @@ class InputMap(Operation):
             raise ValueError("'xs' must either be a list of 'ScaleOp's or 'dict's!")
 
     def __call__(self, img):
-        return np.concatenate([op(img) for op in self.ops], axis=0,dtype=img.dtype)
+        return np.concatenate([op(img) for op in self.ops], axis=0)
 
     def output_size(self, input_shape):
         return sum([op.output_size(input_shape) for op in self.ops])
@@ -105,12 +105,21 @@ class InputMap(Operation):
 class PixelsOp(Operation):
     def __init__(self, size):
         self.size = size
+        #self.warned_yet = False
     
     def __call__(self, img):
         with Image.fromarray(img) as im:
             im_resized = im.resize(self.size,resample=Image.BILINEAR)
+            """if np.abs(im_resized).max>10 and self.warned_yet not True:
+                print('Warning: `pixels` input map had output\n'
+                       'with values higher than 10. Range of tanh'
+                     '\nas activation function is (-1;1). If many'
+                     'high values are used\nthey will be quashed'
+                     'to the same area')
+                self.warned_yet = True"""
+   
         
-        return np.asarray(im_resized,dtype=img.dtype).reshape(-1)
+        return np.asarray(im_resized).reshape(-1)
     
 
     def output_size(self, input_shape):
@@ -126,11 +135,13 @@ class RandWeightsOp(Operation):
         self.isize = input_size
         self.hsize = hidden_size
         self.Wih = np.random.uniform(-1, 1, (self.hsize, self.isize))
-        self.bh  = np.random.uniform(-1, 1, (self.hsize,))
+        self.Wih = self.Wih / np.abs(self.Wih.sum(axis=1)).max()
+        #self.bh  = np.random.uniform(-1, 1, (self.hsize,))
 
     def __call__(self, img):
-        Wih, bh = self.Wih, self.bh
-        return Wih.dot(img.reshape(-1)) + bh
+        #Wih, bh = self.Wih, self.bh
+        Wih = self.Wih
+        return Wih.dot(img.reshape(-1)) #+ bh
 
     def output_size(self, input_shape):
         return self.hsize
@@ -157,8 +168,8 @@ class ScaleOp(Operation):
 class GradientOp(Operation):
     def __call__(self, img):
         x = np.gradient(img)
-        x = np.concatenate(x,dtype=img.dtype).reshape(-1)
-        return normalize(x)*2-1
+        x = np.concatenate(x).reshape(-1)
+        return x#normalize(x)*2-1
 
     def output_size(self, input_shape):
         s = self.output_shape(input_shape)
@@ -169,11 +180,12 @@ class GradientOp(Operation):
 
 class VorticityOp(Operation):
     def __call__(self, img):
+        
         u, v = np.gradient(img)
         ux, uy = np.gradient(u)
         vx, vy = np.gradient(v)
         vorticity = ux - vy
-        return vorticity.reshape(-1)
+        return (np.sqrt(img.size))*vorticity.reshape(-1)
 
     def output_size(self, input_shape):
         s = self.output_shape(input_shape)
@@ -244,7 +256,9 @@ def _mean_kernel(kernel_shape):
 
 
 def _random_kernel(kernel_shape):
-    return np.random.uniform(size=kernel_shape, low=-1, high=1)
+    kernel = np.random.uniform(size=kernel_shape, low=-1, high=1)
+    kernel = 2*kernel/np.abs(kernel).sum()
+    return kernel
 
 def _gauss_kernel(kernel_shape):
     ysize, xsize = kernel_shape
