@@ -123,7 +123,8 @@ def train_and_predict_2d(data, specs,
                             in the image (video slice). Equally, it is 
                             the number of principal components used in a
                             PCA dimension reduction to improve scalability
-                            and training performance.
+                            and training performance. If None, PCA is not used,
+                            and Nhidden parameters will be fitted per pixel.
         dtype:              Data type of the ESN-structures (not necessarily)
                             equal to data-dtype. np.float64, or 'float64' recommended,
                             as low precision propagates due to iterative modelling.
@@ -172,7 +173,7 @@ def train_and_predict_2d(data, specs,
 
     
     # prepare data
-    train_inputs, train_targets, pred_targets = split_train_label_pred(data,Ntrain,Npred)
+    train_inputs, train_targets, pred_targets = split_train_label_pred(data,Ntrain,Npred,transient_length=Ntrans)
     print(f'Data is taking up {data.nbytes*1e-9:.1f}GB. Deleting after splitting.')
     del data
     gc.collect()
@@ -210,7 +211,7 @@ def train_and_predict_2d(data, specs,
     hidden_size = map_ih.output_size(img_shape)
     
     print(f"Input size (1 slice): {train_inputs[0].shape}\nHidden size: {hidden_size}")
-    esn = hidden.initialize_dynsys(map_ih, hidden_size,spectral_radius,neuron_connections,dtype=dtype)
+    esn = hidden.initialize_dynsys(map_ih, hidden_size,spectral_radius,neuron_connections,dtype=dtype, upper_sr_calc_dim=upper_sr_calc_dim)
     end_init = time()
     print(f'Building Whh took {end_init-start_init:.2f}s')
         
@@ -242,17 +243,21 @@ def train_and_predict_2d(data, specs,
         
     start_pca = time()
     #reduce hidden state matrix H before using for training
-    if n_PCs is not None:
-        H, pca_object = hidden.dimension_reduce(H,pca_object=None, n_PCs = n_PCs)
+    H, pca_object = hidden.dimension_reduce(H,pca_object=None, n_PCs = n_PCs)
     end_pca = time()
     print(f'PCA Dimension reduction of H took: {end_pca-start_pca:.2f}s')
     
 
-    
     start_lstsq = time()
-    esn = optimize.create_readout_matrix(esn, H, train_targets[Ntrans:])
+    esn = optimize.create_readout_matrix(esn,
+                                         H, train_targets,
+                                         lstsq_method=lstsq_method,
+                                         lstsq_thresh=lstsq_thresh,
+                                         dtype=dtype)
     end_lstsq   = time()
     print(f'Least Squares optimization took {end_lstsq-start_lstsq:.2f}s')
+    training_predictions = H.dot(esn[-1].T)
+    print(f'Training error: {score(training_predictions,train_targets)}')
     # Delete targets not used anymore
     del train_targets
     gc.collect()
@@ -270,8 +275,6 @@ def train_and_predict_2d(data, specs,
         **config
     )
     
-        
-        
     # Post process the prediction targets
     # not used for unbiased mse_orig!
     pred_targets_iST = preprocess(
@@ -281,8 +284,8 @@ def train_and_predict_2d(data, specs,
     )
     
     # SCORING
-    mse_ST = score(predictions_ST,pred_targets_ST)
-    mse_ist = score(predictions_iST,pred_targets_iST)
+    mse_ST   = score(predictions_ST,pred_targets_ST)
+    mse_ist  = score(predictions_iST,pred_targets_iST)
     mse_orig = score(predictions_iST,pred_targets)    
     mse_list = [
         f'MSE-IMED: MSE in standardizing-transform-space: {mse_ST:.2e}',
@@ -349,7 +352,7 @@ def train_and_predict_2d(data, specs,
 
 def test_lissajous(savedir):
     # Spatial resolution
-    input_shape = (100,100)
+    input_shape = (30,30)
     
     # flattened out dimension
     input_size  = input_shape[0] * input_shape[1]
@@ -357,15 +360,15 @@ def test_lissajous(savedir):
     # Specify Training set and Prediction Set Split
     # Note: first 'Ntrans' steps in training set
     # are not regressed upon.
-    Ntrain=800
-    Npred =150
-    Ntrans=100
-    
+
+    Ntrain = 1000
+    Npred=15
+    Ntrans=200
     # total time steps
-    N = Ntrain+Npred+Ntrans
+    N = Npred+Ntrain+1
     
     #create data
-    data = gauss2d_sequence(N=N,size=input_shape,dtype=np.float32)
+    data = gauss2d_sequence(N=N,size=input_shape,dtype=np.float64)
     
     specs = [
         {"type":"pixels", "size":input_shape, "factor": 2.},
@@ -382,6 +385,38 @@ def test_lissajous(savedir):
         {"type":"random_weights", "input_size":input_size, "hidden_size":3500, "factor": 1.},
     ]
     
+    """
+    specs = [
+        {"type":"pixels", "size":input_shape, "factor": 3.},
+        {"type":"conv", "size":(3,3),   "kernel":"gauss",  "factor": 2.},
+        {"type":"conv", "size":(5,5),   "kernel":"gauss",  "factor": 2.},
+        {"type":"conv", "size":(7,7),   "kernel":"gauss",  "factor": 2.},
+        {"type":"conv", "size":(9,9),   "kernel":"gauss",  "factor": 2.},
+        {"type":"conv", "size":(3,3),   "kernel":"random", "factor": 2.},
+        {"type":"conv", "size":(5,5),   "kernel":"random", "factor": 2.},
+        {"type":"conv", "size":(7,7),   "kernel":"random", "factor": 2.},
+        {"type":"conv", "size":(9,9),   "kernel":"random", "factor": 2.},
+        {"type":"gradient", "factor": 2.},
+        {"type":"dct", "size":(15,15), "factor": 0.1},
+        {"type":"random_weights", "input_size":input_size, "hidden_size":3500, "factor": 1.},
+    ]"""
+    conv_factor = 1
+    specs = [
+        #{"type":"pixels", "size":(input_shape[0]*5,input_shape[1]*5), "factor": 1.},
+        {"type":"conv", "size":(3,3),   "kernel":"gauss",  "factor": conv_factor},
+        {"type":"conv", "size":(5,5),   "kernel":"gauss",  "factor": conv_factor},
+        {"type":"conv", "size":(7,7),   "kernel":"gauss",  "factor": conv_factor},
+        {"type":"conv", "size":(9,9),   "kernel":"gauss",  "factor": conv_factor},
+        #{"type":"conv", "size":(3,3),   "kernel":"random", "factor": 1.},
+        #{"type":"conv", "size":(5,5),   "kernel":"random", "factor": 1.},
+        #{"type":"conv", "size":(7,7),   "kernel":"random", "factor": 1.},
+        #{"type":"conv", "size":(9,9),   "kernel":"random", "factor": 1.},
+        #{"type":"gradient", "factor": 1.},
+        #{"type":"dct", "size":(15,15), "factor": 1},
+        #{"type":"random_weights", "input_size":input_size, "hidden_size":3500, "factor": 1.},
+    ]
+    
+    
     parameter_dict = dict(
         specs = specs,
         Npred  = Npred,
@@ -389,21 +424,21 @@ def test_lissajous(savedir):
         Ntrans = Ntrans,
         spectral_radius = 1.,
         neuron_connections = 10,
-        n_PCs = 600,
-        sigma  =  (0.2,2,2),
-        eps    =  1e-3,
+        n_PCs  = 900,
+        sigma  =  (0,2,2),
+        eps    =  1e-2,
         plot_prediction = True,
         dtype='float64',
-        lstsq_method ='scipy',
-        lstsq_thresh = None,
+        lstsq_method ='svd',
+        lstsq_thresh = 1e-3,
         ST_method = 'DCT',
         cpus_to_use = 32,
         scale_min = -1,
         scale_max =  1,
         savedir = savedir,
-        neuron_dist = 'normal',
+        neuron_dist = 'uniform',
         upper_sr_calc_dim=5000,
-        save_condition = 'always',
+        save_condition = 'never',
         random_seed = np.random.seed()
 
     )
@@ -421,29 +456,97 @@ def test_chaotic(savedir):
     # Specify Training set and Prediction Set Split
     # Note: first 'Ntrans' steps in training set
     # are not regressed upon.
-    Ntrain=1200
-    Npred =150
-    Ntrans=300
+    Ntrain= 800
+    Npred = 50
+    Ntrans= 300
     
     # total time steps
     N = Ntrain+Npred+Ntrans
     
     #create data
     data = mackey2d_sequence(N=N,size=input_shape,dtype=np.float32)
-    
+    # use global input map multiplier
+    k = 1.3
     specs = [
-        {"type":"pixels", "size":input_shape, "factor": 2.},
-        {"type":"conv", "size":(3,3),   "kernel":"gauss",  "factor": 1.},
-        {"type":"conv", "size":(5,5),   "kernel":"gauss",  "factor": 1.},
-        {"type":"conv", "size":(7,7),   "kernel":"gauss",  "factor": 1.},
-        {"type":"conv", "size":(9,9),   "kernel":"gauss",  "factor": 1.},
-        {"type":"conv", "size":(3,3),   "kernel":"random", "factor": 1.},
-        {"type":"conv", "size":(5,5),   "kernel":"random", "factor": 1.},
-        {"type":"conv", "size":(7,7),   "kernel":"random", "factor": 1.},
-        {"type":"conv", "size":(9,9),   "kernel":"random", "factor": 1.},
+        {"type":"pixels", "size":input_shape, "factor": 1.},
+        #{"type":"conv", "size":(3,3),   "kernel":"gauss",  "factor": k},
+        #{"type":"conv", "size":(5,5),   "kernel":"gauss",  "factor": k},
+        {"type":"conv", "size":(7,7),   "kernel":"gauss",  "factor": k},
+        {"type":"conv", "size":(9,9),   "kernel":"gauss",  "factor": k},
+        #{"type":"conv", "size":(3,3),   "kernel":"random", "factor": k},
+        #{"type":"conv", "size":(5,5),   "kernel":"random", "factor": k},
+        {"type":"conv", "size":(7,7),   "kernel":"random", "factor": k},
+        {"type":"conv", "size":(9,9),   "kernel":"random", "factor": k},
         {"type":"gradient", "factor": 1.},
-        {"type":"dct", "size":(15,15), "factor": 1},
-        {"type":"random_weights", "input_size":input_size, "hidden_size":3500, "factor": 1.},
+        {"type":"dct", "size":(20,20), "factor": 1},
+        #{"type":"random_weights", "input_size":input_size, "hidden_size":10000, "factor": 2.},
+        {"type":"vorticity", "factor": 1.},
+
+    ]
+    
+    parameter_dict = dict(
+        specs = specs,
+        Npred  = Npred,
+        Ntrain = Ntrain,
+        Ntrans = Ntrans,
+        spectral_radius = 1.2,
+        neuron_connections = 10,
+        n_PCs  = None,
+        sigma  =  (0.5,2,2),
+        eps    =  1e-2,
+        plot_prediction = True,
+        dtype='float64',
+        lstsq_method ='sklearn',
+        lstsq_thresh = 1e-3,
+        ST_method = 'DCT',
+        cpus_to_use = 32,
+        scale_min = -1,
+        scale_max =  1,
+        savedir = savedir,
+        neuron_dist = 'normal',
+        upper_sr_calc_dim=5000,
+        save_condition = 'always',
+        random_seed = np.random.seed()
+
+    )
+
+    return train_and_predict_2d(data,config=parameter_dict, **parameter_dict)
+
+def test_kuroshio(savedir):
+    # Spatial resolution
+    data = np.load('Kuro_SSH_5daymean.npy')
+    input_shape = data.shape[1:]
+    
+    # flattened out dimension
+    input_size  = input_shape[0] * input_shape[1]
+    
+    # Specify Training set and Prediction Set Split
+    # Note: first 'Ntrans' steps in training set
+    # are not regressed upon.
+    Npred = 100
+    Ntrain = data.shape[0]-Npred-1
+    Ntrans= 200
+    
+    # total time steps
+    N = Ntrain+Npred+Ntrans
+    
+    # use global input map multiplier
+    k = 0.7
+    specs = [
+        {"type":"pixels", "size":(input_shape[0]//10,input_shape[1]//10), "factor": 1.},
+        #{"type":"conv", "size":(3,3),   "kernel":"gauss",  "factor": k},
+        #{"type":"conv", "size":(5,5),   "kernel":"gauss",  "factor": k},
+        #{"type":"conv", "size":(7,7),   "kernel":"gauss",  "factor": k},
+        #{"type":"conv", "size":(9,9),   "kernel":"gauss",  "factor": k},
+        {"type":"conv", "size":(3,3),   "kernel":"random", "factor": k},
+        #{"type":"conv", "size":(5,5),   "kernel":"random", "factor": k},
+        #{"type":"conv", "size":(7,7),   "kernel":"random", "factor": k},
+        {"type":"conv", "size":(9,9),   "kernel":"random", "factor": k},
+        {"type":"gradient", "factor": k},
+        {"type":"dct", "size":(30,30), "factor": k},
+        #{"type":"random_weights", "input_size":input_size, "hidden_size":10000, "factor": 2.},
+        {"type":"vorticity", "factor": k},
+
     ]
     
     parameter_dict = dict(
@@ -453,13 +556,13 @@ def test_chaotic(savedir):
         Ntrans = Ntrans,
         spectral_radius = 1.,
         neuron_connections = 10,
-        n_PCs = 800,
-        sigma  =  (0.2,2,2),
-        eps    =  1e-3,
+        n_PCs  = 1000,
+        sigma  =  (0.5,2,2),
+        eps    =  1e-2,
         plot_prediction = True,
         dtype='float64',
-        lstsq_method ='scipy',
-        lstsq_thresh = None,
+        lstsq_method ='sklearn',
+        lstsq_thresh = 1e-3,
         ST_method = 'DCT',
         cpus_to_use = 32,
         scale_min = -1,
@@ -476,6 +579,6 @@ def test_chaotic(savedir):
 
 
 if __name__ == "__main__":
-        mse = test_lissajous("lissajous_blob")
-        mse = test_chaotic("chaos_blob")
- 
+        #mse = test_lissajous("lissajous_blob")
+        #mse = test_chaotic("chaos_blob")
+        mse = test_kuroshio('kuro_again')
