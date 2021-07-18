@@ -3,10 +3,10 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import eigs
 
 #from esn_dev.jaxsparse import sp_dot
-from sklearn.decomposition import KernelPCA as PCA
+from sklearn.decomposition import PCA as PCA
 
 def initialize_dynsys(map_ih, hidden_dim,
-                      spectral_radius=1.5, neuron_connections=10, neuron_dist='uniform',dtype=None, **kwargs):
+                      spectral_radius=1.5, neuron_connections=10, neuron_dist='uniform',dtype=None,upper_sr_calc_dim=5000, **kwargs):
     """
     Create an ESN dynamical system with input/hidden weights represented as a tuple:
 
@@ -24,7 +24,7 @@ def initialize_dynsys(map_ih, hidden_dim,
         neuron_dist: distribution of non-zero values in Whh (uniform/normal)
     
     Returns:
-        (Wih, Whh, bh)
+        (Wih, Whh, bh):  Initialization of dynamical system.
     """
     
     Whh = reservoir(
@@ -32,15 +32,18 @@ def initialize_dynsys(map_ih, hidden_dim,
         spectral_radius, 
         neuron_connections,
         neuron_dist,
+        upper_sr_calc_dim,
         **kwargs
     )
     
     # csr matrix more efficient for matrix product
     Whh = Whh.tocsr()
     
-    bh  = np.asarray(
+    """bh  = np.asarray(
         np.random.uniform(-1, 1, hidden_dim),
-        dtype=dtype)
+        dtype=dtype)"""
+    
+    bh = np.zeros(hidden_dim)
 
     return (map_ih, Whh, bh)
 
@@ -64,7 +67,7 @@ def evolve_hidden_state(dynsys, xs, h, mode=None,dtype=None):
     
     if mode == 'predict':
         # returns only last hidden state
-        h = fwd_prop(h=h,x=xs,Whh=Whh,Win=map_ih)
+        h = fwd_prop(h=h,x=xs,Whh=Whh,Win=map_ih,bh=bh)
         return h
 
     # number of time steps
@@ -82,7 +85,7 @@ def evolve_hidden_state(dynsys, xs, h, mode=None,dtype=None):
     if mode=='transient':
         # returns only last hidden state
         for t in range(T):
-            h = fwd_prop(h=h,x=xs[t],Whh=Whh,Win=map_ih)
+            h = fwd_prop(h=h,x=xs[t],Whh=Whh,Win=map_ih,bh=bh)
         return h
 
     elif mode == 'train':
@@ -91,11 +94,11 @@ def evolve_hidden_state(dynsys, xs, h, mode=None,dtype=None):
         Nhidden = Whh.shape[0]
 
         H = np.zeros([T,Nhidden],dtype=dtype)
-        H[0,:] =  fwd_prop(h=h,x=xs[0],Whh=Whh,Win=map_ih)
+        H[0,:] =  fwd_prop(h=h,x=xs[0],Whh=Whh,Win=map_ih,bh=bh)
 
         
         for t in range(1,T):
-            H[t,:] = fwd_prop(h=H[t-1,:],x=xs[t],Whh=Whh,Win=map_ih)
+            H[t,:] = fwd_prop(h=H[t-1,:],x=xs[t],Whh=Whh,Win=map_ih,bh=bh)
         
         return H
         
@@ -104,7 +107,7 @@ def evolve_hidden_state(dynsys, xs, h, mode=None,dtype=None):
         return
     
         
-def fwd_prop(h,x,Whh,Win):
+def fwd_prop(h,x,Whh,Win,bh):
     """
     Recurrent Neural Network Forward Propagation
     Arguments:
@@ -117,8 +120,15 @@ def fwd_prop(h,x,Whh,Win):
     Returns:
         h:       Next hidden state (t --> t+1)
      """
+    warn_limit = 10
+    Win_x = Win(x)
+    if np.abs(Win_x).max() > 10:
+        print('Warning: Input map function Win(x) gave'
+              'values with magnitude larger than 10.'
+              'tanh() activation has range (-1;1), so if all values'
+             'are very high, they will be squashed to the same output')
     
-    return np.tanh(Whh.dot(h) + Win(x))
+    return np.tanh(Whh.dot(h) + Win_x + bh)
 
 
 def reservoir(hidden_dim, spectral_radius, neuron_connections,neuron_dist='uniform', upper_sr_calc_dim=5000,dtype=None,**kwargs):
@@ -250,61 +260,68 @@ def reservoir(hidden_dim, spectral_radius, neuron_connections,neuron_dist='unifo
 def dimension_reduce(h,pca_object=None,n_PCs = None):
     """
     Function to fit-transform or transform if already fitted.
-    if n_PCs is none (relevant when teaching PCA), we set
-    n_PCs = min(M,N), where M,N are dimensions of h (matrix).
+    if n_PCs is none (relevant when teaching PCA), we disable
+    PCA.
     
     Params:
         h: single hidden state (h) or state matrix (H)
+           shaped (T x Nhidden)
         pca_object: already-fitted PCA transform or None
                     if not yet fitted
     Returns: 
         if pca_object is None:
             H_r: dimension-reduced hidden state matrix
+                 shape (T x n_PCs)
             pca_object: trained transform object
         else:
             h_r: dimension-reduced hidden state
     """
+    if n_PCs is None and pca_object is None:
+        if h.shape[0]>1:
+            print('no pca')
+            return h, None
+        else:
+            return h
     
-    if pca_object is None:
-        
+    elif pca_object is None:
+        # PCA not yet fitted.
+        # n_PCs is not None
+        # in this case
+
         # Fit the pca_object.         
         H = h
-        
-        """if n_PCs is None or n_PCs > min(H.shape)-1:
+        print(f'Using {n_PCs} principal components, and min(H.shape)={min(H.shape)}')
+        if n_PCs > min(H.shape):
             n_PCs = min(H.shape)-1
-            print(f'Using {n_PCs} principal components')
+            print('n_PCs can be maximally min(Hm,Hn), using n_PCs = {n_PCs}')
+        pca_object = PCA(n_components=n_PCs,whiten=False)
+        H_r = pca_object.fit_transform(H)
         
-        pca_object = PCA(n_components=n_PCs+1)
-        H_r = pca_object.fit_transform(H)"""
-        
-        # mean should be subtracted
+        """# feature mean should be subtracted
+        # when using PCA, for components
+        # to have variance interpretation
         mean = H.mean(axis=0)
         H -= mean[np.newaxis,:]
         
         from scipy.linalg import svd
-        _, s, V = svd(H, full_matrices=False)
-        #scale = s[0]
-        #import matplotlib.pyplot as plt
-        if n_PCs is None:
-            n_PCs = min(H.shape)-1
-        #Reduced data matrix
-        print(f'Using {n_PCs} principal components, and min(H.shape)={min(H.shape)}')
-        V = (V.T)[:,:n_PCs+1] #+1 for bias term
-        
-        #transform H
-        H_r = H.dot(V)
+        _,_,V = svd(H, full_matrices=False)
 
-        #keep a bias term
-        H_r[:,-1] = 1. 
-        
+        #V = V[:n_PCs+1,:].T  #+1 for bias term
+        #V = (V.T)[:,:n_PCs+1]
+        V = V[:n_PCs+1,:]
+        #transform H
+        H_r = H.dot(V.T)
         class pca(object):
             def __init__(self,V,mean):
-                self.fit  = V
+                self.V  = V
                 self.mean = mean
             def transform(self,h):
-                return (h-self.mean).dot(self.fit)
+                return V.dot(h-self.mean)#().dot(self.V)
         
         pca_object=pca(V,mean)
+        """
+        #keep a bias term        
+        H_r[:,-1] = 1. 
         
         return H_r, pca_object
     
@@ -319,7 +336,7 @@ def dimension_reduce(h,pca_object=None,n_PCs = None):
             #transform
             h_r = pca_object.transform(h)
             #single state
-            h_r = h_r.reshape(-1)
+            h_r = np.squeeze(h_r)#h_r.reshape(-1)
             #keep a bias term
             h_r[-1] = 1.
             
