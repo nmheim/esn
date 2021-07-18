@@ -3,7 +3,7 @@ import scipy
 from scipy.linalg import lstsq
 import statsmodels.api as sm
 
-def create_readout_matrix(dynsys, H, targets,lstsq_method='scipy',dtype=None):
+def create_readout_matrix(dynsys, H, targets,lstsq_method='elastic',dtype=None,**kwargs):
     """
     Compute the output matrix `Who` via least squares. 
     and add it to the dynsys tuple to create a model tuple.
@@ -23,12 +23,16 @@ def create_readout_matrix(dynsys, H, targets,lstsq_method='scipy',dtype=None):
     """
     if lstsq_method == 'scipy':
         Who = lstsq_scipy(H,targets,lstsq_thresh=1e-10,dtype=dtype)
+    elif lstsq_method == 'weighted' or lstsq_method == 'sklearn':
+        Who = lstsq_sklearn(H,targets)
+    elif lstsq_method == 'elastic':
+        Who = elastic(H,targets)
     else:
         Who = lstsq_svd(H, targets,lstsq_thresh=1e-4,dtype=dtype)
     
     return dynsys + (Who,)
 
-def lstsq_svd(H, targets, lstsq_thresh=1e-4, dtype=None):
+"""def lstsq_svd(H, targets, lstsq_thresh=1e-4, dtype=None):
 
     if targets.ndim != 2:
         raise ValueError("targets must have shape (time, features)")
@@ -51,7 +55,22 @@ def lstsq_svd(H, targets, lstsq_thresh=1e-4, dtype=None):
     #print(f'Tikhonov with parameter {alpha}, largest Singualar value: {s[0]:.3e}')
     #Who =  np.dot(s*np.dot(L, Vh.T) / (alpha +s**2), U.T)
     return np.asarray(Who,dtype=dtype)
+"""
 
+def lstsq_svd(H, labels, lstsq_thresh=1e-4,dtype=None):
+    if labels.ndim != 2:
+        raise ValueError("Labels must have shape (time, features)")
+
+    U, s, Vh = scipy.linalg.svd(H.T, full_matrices=False)
+    scale = s[0]
+    n = np.sum(np.abs(s/scale) > lstsq_thresh)  # Ensure condition number less than 1/thresh
+    
+    L = labels.T
+    v = Vh[:n, :].T
+    uh = U[:, :n].T
+
+    wout = np.dot(np.dot(L, v) / s[:n], uh)
+    return wout
 
 def lstsq_scipy(H, targets, lstsq_thresh=1e-10,dtype=None):
     """
@@ -64,4 +83,35 @@ def lstsq_scipy(H, targets, lstsq_thresh=1e-10,dtype=None):
     print(f'Rank: {rank}')
     
     return np.asarray(Who.T,dtype=dtype)
+    
+from sklearn.linear_model import LinearRegression
+def lstsq_sklearn(H,targets,dtype=None):
+    """
+    This code allows weighted least squares
+    I suggest giving more weight to recent observations
+    """
+    regress = LinearRegression(
+        fit_intercept=False,
+        normalize=False,
+        copy_X=True,
+        n_jobs=-1)
+    weights = np.linspace(0.3,1.,len(targets))
+    print(f'Using Weighted Least Squares Fit with largest weight {weights.max()}')
+    regress.fit(H, targets,sample_weight=weights)
+    print(f'R2 score: {regress.score(H,targets)}')
+    
+    return np.asarray(regress.coef_,dtype=dtype)
+
+from sklearn.linear_model import ElasticNet
+def elastic(H,targets,dtype=None):
+    #consider warm_start for online learning
+    weights = np.linspace(0.1,1,len((targets)))
+    #print(f'Using Weighted ElasticNet Fit with largest weight {weights.max()}')
+    #sample_weight=weights
+    regress = ElasticNet(
+    fit_intercept=False,l1_ratio=0.5,selection='random',alpha=1.0)
+    regress.fit(H, targets)
+
+    return np.asarray(regress.coef_,dtype=dtype)
+
     
