@@ -8,21 +8,34 @@ import pyfftw
 from IMED.standardizingTrans_ndim import ST_ndim_DCT, ST_ndim_FFT
 from scipy.fft import set_backend
 
-def split_train_label_pred(sequence, train_length, pred_length):
+def split_train_label_pred(sequence, train_length, pred_length,transient_length=None):
+    # if using transient, specifying transient_length = Ntrans is more memory efficient  
     
-    train_end = train_length
-    train_seq = sequence[0:train_end]
-    train_inputs  = sequence[0:train_end]
-    train_targets = sequence[1:train_end+1]
-    pred_targets= sequence[train_end:train_end + pred_length]
+    train_inputs  = sequence[0:train_length]
+    # targets are one-ahead of inputs
+    if transient_length is not None:
+        train_targets = sequence[1+transient_length:train_length+1]
+    else:
+        train_targets = sequence[1:train_length+1]
+    pred_targets = sequence[train_length+1 :train_length +1 + pred_length]
     return train_inputs, train_targets, pred_targets
 
+
+"""def split_train_label_pred(sequence, train_length, pred_length):
+    print('heim code')
+    train_end = train_length + 1
+    train_seq = sequence[:train_end]
+    inputs = train_seq[:-1]
+    labels = train_seq[1:]
+    pred_labels = sequence[train_end:train_end + pred_length]
+    return inputs, labels, pred_labels"""
 
 def scale(x, scale_min=-1, scale_max=1, training_min=None, training_max=None, inv=False,**kwargs):
     """Scale array 'x' to values in (scale_min,scale_max)"""
     if inv:
         #descale (requires training_min, training_max input)
-        return (x-scale_min)*(training_max-training_min)/(scale_max-scale_min)+training_min
+        return ((x-scale_min)*(training_max-training_min)/
+                (scale_max-scale_min)+training_min)
     
     if training_min is None:
         training_min, training_max = x.min(), x.max()
@@ -68,7 +81,7 @@ def save(targets, predictions,dict_of_arrays,param_dict=None,save_condition='if_
         
     elif save_condition == 'never':
         save_condition = False
-        prnit('Never saving model.')
+        print('Never saving model.')
     
     folder = None
     if save_condition:
