@@ -18,7 +18,6 @@ def lin_readout(h,Who,pca_object=None):
     
     # dimension-reduce
     if pca_object is not None:
-        
         h = dimension_reduce(h,pca_object)
     
     return Who.dot(h)
@@ -32,7 +31,6 @@ def predict(model, y0, h0, pca_object=None, Npred=300,dtype=None):
 
       h_{n+1} = \tanh(Whh h_n + Wih y_n + bh)
       y_{n+1} = Who h_{n+1}
-      
       
     Params:
         model: complete trained model (map_ih,Whh,bh,Who)
@@ -52,11 +50,10 @@ def predict(model, y0, h0, pca_object=None, Npred=300,dtype=None):
     
     Y  = np.zeros([Npred,y0.size],dtype=dtype)
     h  = evolve_hidden_state(model, y0, h0,mode='predict')
-    Y[0] = lin_readout(h,Who,pca_object)
-    for t in range(1,Npred):
-        y = Y[t-1].reshape(y0.shape)
-        h    = evolve_hidden_state(model,y,h,mode='predict')
+    for t in range(0,Npred):
         Y[t] = lin_readout(h,Who,pca_object)
+        y    = Y[t].reshape(y0.shape)
+        h    = evolve_hidden_state(model,y,h,mode='predict')
 
     Y = Y.reshape((Npred,y0.shape[0],y0.shape[1]))
 
