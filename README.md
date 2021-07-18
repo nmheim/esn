@@ -1,9 +1,7 @@
-![Python application](https://github.com/nmheim/esn_dev.workflows/Python%20application/badge.svg)
+![Python application](https://github.com/jfelding/esn_dev.workflows/Python%20application/badge.svg)
 
-# Echo State Networks in JAX!
+# Scalable Spatial Echo State Network
 
-Implements the ESN in JAX with a simple, sparse COO representation of the ESN
-reservoir.
 
 ## Usage
 
